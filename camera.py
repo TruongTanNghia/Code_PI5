@@ -4,34 +4,39 @@ import threading
 import time
 from config import CAMERA_ID, USE_PICAMERA, FRAME_WIDTH, FRAME_HEIGHT
 
+# Bot bot log V4L2 khi auto-detect (nhieu /dev/video* la metadata khong phai capture)
+os.environ.setdefault("OPENCV_LOG_LEVEL", "ERROR")
+
 
 class _USBCamera:
-    """Camera USB / V4L2 voi auto-detect index."""
+    """Camera USB / V4L2 voi auto-detect index, xac nhan bang frame thuc te."""
 
     def __init__(self):
         self.cap = None
+        tried = []
 
         if CAMERA_ID >= 0:
-            tried = [CAMERA_ID]
+            tried.append(CAMERA_ID)
             self.cap = self._try_open(CAMERA_ID)
+            if self.cap is not None:
+                print(f"[CAMERA] Mo /dev/video{CAMERA_ID} OK")
 
         # Auto-detect khi CAMERA_ID = -1 hoac mo that bai
-        if self.cap is None or not self.cap.isOpened():
-            tried = []
-            for idx in range(0, 10):
+        if self.cap is None:
+            for idx in range(0, 40):
                 if not os.path.exists(f"/dev/video{idx}"):
                     continue
                 tried.append(idx)
                 cap = self._try_open(idx)
-                if cap is not None and cap.isOpened():
+                if cap is not None:
                     print(f"[CAMERA] Auto-detected: /dev/video{idx}")
                     self.cap = cap
                     break
 
-            if self.cap is None or not self.cap.isOpened():
+            if self.cap is None:
                 raise RuntimeError(
-                    f"Khong mo duoc camera USB. Da thu cac index: {tried}. "
-                    f"Chay `ls /dev/video*` va `v4l2-ctl --list-devices` de kiem tra."
+                    f"Khong mo duoc camera USB. Da thu: {tried}. "
+                    f"Chay `v4l2-ctl --list-devices` de kiem tra."
                 )
 
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
@@ -40,12 +45,18 @@ class _USBCamera:
 
     @staticmethod
     def _try_open(idx):
-        cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
-        if cap.isOpened():
-            return cap
-        cap.release()
-        cap = cv2.VideoCapture(idx)  # fallback backend mac dinh
-        return cap if cap.isOpened() else None
+        """Mo + thu doc 1 frame de xac nhan device thuc su capture duoc."""
+        for backend in (cv2.CAP_V4L2, cv2.CAP_ANY):
+            cap = cv2.VideoCapture(idx, backend)
+            if not cap.isOpened():
+                cap.release()
+                continue
+            # Phai doc duoc frame thuc te (nhieu /dev/video* tren Pi5 la metadata)
+            ok, frame = cap.read()
+            if ok and frame is not None and frame.size > 0:
+                return cap
+            cap.release()
+        return None
 
     def read(self):
         return self.cap.read()
