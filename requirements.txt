@@ -4,3 +4,7 @@ adafruit-blinka
 adafruit-circuitpython-pca9685
 gpiozero
 lgpio
+# Tuy chon: cho RealSense D435 depth (xem detect_with_depth.py)
+pyrealsense2
+# Tuy chon: cho NCNN export (nhanh hon .pt 3-5x tren Pi5)
+ncnn
