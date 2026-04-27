@@ -28,9 +28,10 @@ PIN_M2_CCW        = 23   # GPIO23 -> PC817 IN4 -> driver 2 CCW-
 PIN_M2_LIMIT_MIN  = 13   # GPIO13 <- cong tac MIN
 PIN_M2_LIMIT_MAX  = 19   # GPIO19 <- cong tac MAX
 
-# Loai cong tac: True = NC (Normally Closed) - sai-an-toan, day dut = coi nhu cham
-#                False = NO (Normally Open) - dong khi cham
-SWITCH_NC = True
+# Loai cong tac:
+#   True  = NC (Normally Closed) - sai-an-toan, day dut = coi nhu cham
+#   False = NO (Normally Open)   - dong khi cham (HW thuc te dang dung)
+SWITCH_NC = False
 
 STEPPER_PULSE_HIGH = 0.0005   # 500us cao
 STEPPER_PULSE_LOW  = 0.0005   # 500us thap -> 1000 step/s
