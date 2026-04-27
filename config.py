@@ -14,6 +14,24 @@ TILT_MIN, TILT_MAX = 50, 130
 KP = 0.025
 DEAD_ZONE = 20
 
+# ===== STEPPER (Autonics A16K-M569 + MD5-HD14 qua PC817) =====
+# GPIO BCM pin (sua tuy theo cach anh dau day)
+# Motor 1 = PAN (xoay trai/phai)
+PIN_M1_CW         = 27   # -> PC817 IN1 -> driver 1 CW-
+PIN_M1_CCW        = 22   # -> PC817 IN2 -> driver 1 CCW-
+PIN_M1_LIMIT_CW   = 23   # <- limit switch ben CW cua motor 1 (None neu chua co)
+PIN_M1_LIMIT_CCW  = 24   # <- limit switch ben CCW cua motor 1
+
+# Motor 2 = TILT (xoay len/xuong)
+PIN_M2_CW         = 5    # -> PC817 IN3 -> driver 2 CW-
+PIN_M2_CCW        = 6    # -> PC817 IN4 -> driver 2 CCW-
+PIN_M2_LIMIT_CW   = 25   # <- limit switch ben CW cua motor 2 (None neu chua co)
+PIN_M2_LIMIT_CCW  = 16   # <- limit switch ben CCW cua motor 2
+
+STEPPER_PULSE_HIGH = 0.0005   # 500us cao
+STEPPER_PULSE_LOW  = 0.0005   # 500us thap -> 1000 step/s
+STEPPER_STEP_DEG   = 0.72     # A16K-M569: 0.72 deg/step (fullstep)
+
 # ===== DETECTOR =====
 MODEL_PATH = "./results-mouse/best_ncnn_model"  # NCNN nhanh hon .pt 3-5x tren Pi5
                                                 # Neu chua convert, doi sang "./results-mouse/best.pt"

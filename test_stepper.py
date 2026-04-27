@@ -1,115 +1,113 @@
 """
-Test Autonics A16K-M569 (5-phase stepper) + MD5-HD14 driver + 2 limit switches.
+Test 2 stepper Autonics A16K-M569 + 2 driver MD5-HD14 qua PC817 4-kenh
++ limit switch.
 
-KICH BAN TEST:
-  1. Quay CW (chieu kim dong ho) cho den khi cham limit switch CW -> dung
-  2. Quay nguoc CCW cho den khi cham limit switch CCW -> dung
-  3. Bao cao tong so xung di duoc
+KICH BAN:
+  - Voi moi motor: quay CW cho den khi cham limit -> dung
+                   quay CCW cho den khi cham limit -> dung
+                   in tong so step di duoc.
+  - Cham vao bat ky limit nao se DUNG NGAY motor tuong ung.
 
 Chay: python test_stepper.py
-Ctrl+C de huy bat ky luc nao.
+Ctrl+C de huy.
+
+CHON MOTOR DE TEST:
+    python test_stepper.py        -> test ca 2 motor
+    python test_stepper.py 1      -> chi test motor 1 (PAN)
+    python test_stepper.py 2      -> chi test motor 2 (TILT)
 """
+import sys
 import time
-from gpiozero import OutputDevice, Button
-from gpiozero.pins.lgpio import LGPIOFactory
-from gpiozero import Device
-Device.pin_factory = LGPIOFactory()
+from stepper import Stepper
+from config import (
+    PIN_M1_CW, PIN_M1_CCW, PIN_M1_LIMIT_CW, PIN_M1_LIMIT_CCW,
+    PIN_M2_CW, PIN_M2_CCW, PIN_M2_LIMIT_CW, PIN_M2_LIMIT_CCW,
+    STEPPER_PULSE_HIGH, STEPPER_PULSE_LOW, STEPPER_STEP_DEG,
+)
 
 
-# ===== GPIO BCM pin (anh co the doi tuy y) =====
-PIN_CW_PULSE = 27       # -> MD5-HD14 chan "CW +" (chan "CW -" noi GND)
-PIN_CCW_PULSE = 22      # -> MD5-HD14 chan "CCW +" (chan "CCW -" noi GND)
-PIN_LIMIT_CW = 23       # <- Limit switch CW (NO -> GPIO, COM -> GND)
-PIN_LIMIT_CCW = 24      # <- Limit switch CCW (NO -> GPIO, COM -> GND)
-
-# ===== Thong so xung (~1kHz, motor quay cham, an toan de test) =====
-PULSE_HIGH = 0.0005     # 500us
-PULSE_LOW = 0.0005      # 500us -> 1000 steps/giay
-STEP_DEG = 0.72         # A16K-M569: 0.72 deg/step (fullstep, chua microstep)
+def make(name, cw, ccw, lcw, lccw):
+    return Stepper(name, cw, ccw, lcw, lccw,
+                   pulse_high=STEPPER_PULSE_HIGH,
+                   pulse_low=STEPPER_PULSE_LOW,
+                   step_deg=STEPPER_STEP_DEG)
 
 
-cw_pin = OutputDevice(PIN_CW_PULSE, initial_value=False)
-ccw_pin = OutputDevice(PIN_CCW_PULSE, initial_value=False)
-# pull_up=True: trang thai mac dinh la HIGH; khi cong tac dong (NO->COM->GND) thi HIGH->LOW
-# bounce_time chong rung tiep diem
-limit_cw = Button(PIN_LIMIT_CW, pull_up=True, bounce_time=0.02)
-limit_ccw = Button(PIN_LIMIT_CCW, pull_up=True, bounce_time=0.02)
+def print_status(motor):
+    s = motor.status()
+    lc = s["limit_cw_triggered"]
+    la = s["limit_ccw_triggered"]
+    lc_str = "TRIGGERED" if lc else ("open" if lc is False else "khong cau hinh")
+    la_str = "TRIGGERED" if la else ("open" if la is False else "khong cau hinh")
+    print(f"  {motor.name}: position={s['position_steps']} steps "
+          f"({s['position_deg']:.1f} deg) | limit CW={lc_str} | limit CCW={la_str}")
 
 
-def one_step(direction):
-    """Phat 1 xung. Tra ve False neu cham limit (khong phat xung)."""
-    if direction > 0:
-        if limit_cw.is_pressed:
-            return False
-        cw_pin.on()
-        time.sleep(PULSE_HIGH)
-        cw_pin.off()
-        time.sleep(PULSE_LOW)
+def test_one_motor(motor, max_steps=8000):
+    print(f"\n{'='*55}")
+    print(f" TEST MOTOR: {motor.name}")
+    print(f"{'='*55}")
+    print_status(motor)
+
+    if motor.is_blocked(+1) and motor.is_blocked(-1):
+        print(f"  [!] Ca hai limit cua {motor.name} dang trigger - bo qua.")
+        return
+
+    print(f"\n  >>> Quay {motor.name} CW (toi da {max_steps} steps)...")
+    n_cw = 0
+    while n_cw < max_steps and motor.step(+1):
+        n_cw += 1
+        if n_cw % 200 == 0:
+            print(f"      ...{n_cw} steps ({n_cw * motor.step_deg:.1f} deg)")
+    if n_cw >= max_steps:
+        print(f"  >>> Het max_steps ({max_steps}) ma chua cham limit CW.")
     else:
-        if limit_ccw.is_pressed:
-            return False
-        ccw_pin.on()
-        time.sleep(PULSE_HIGH)
-        ccw_pin.off()
-        time.sleep(PULSE_LOW)
-    return True
+        print(f"  >>> CHAM LIMIT CW sau {n_cw} steps.")
 
+    time.sleep(0.5)
 
-def rotate_until_limit(direction, max_steps=20000):
-    name = "CW" if direction > 0 else "CCW"
-    print(f"\n[STEPPER] Bat dau quay {name} (toi da {max_steps} steps)...")
-    count = 0
-    while count < max_steps:
-        if not one_step(direction):
-            print(f"[STEPPER] >>> DA CHAM LIMIT {name} <<< sau {count} steps "
-                  f"(~{count * STEP_DEG:.1f} deg)")
-            return count
-        count += 1
-        if count % 200 == 0:
-            print(f"   ... {count} steps (~{count * STEP_DEG:.1f} deg)")
-    print(f"[STEPPER] Het max_steps ({max_steps}) ma chua cham limit.")
-    return count
+    print(f"\n  >>> Quay {motor.name} CCW (toi da {max_steps} steps)...")
+    n_ccw = 0
+    while n_ccw < max_steps and motor.step(-1):
+        n_ccw += 1
+        if n_ccw % 200 == 0:
+            print(f"      ...{n_ccw} steps ({n_ccw * motor.step_deg:.1f} deg)")
+    if n_ccw >= max_steps:
+        print(f"  >>> Het max_steps ({max_steps}) ma chua cham limit CCW.")
+    else:
+        print(f"  >>> CHAM LIMIT CCW sau {n_ccw} steps.")
+
+    print(f"\n  KET QUA {motor.name}: CW={n_cw} steps, CCW={n_ccw} steps "
+          f"(khoang {max(n_cw, n_ccw) * motor.step_deg:.1f} deg)")
 
 
 def main():
-    print("=" * 55)
-    print(" Autonics A16K-M569 + MD5-HD14 + Limit switch test")
-    print("=" * 55)
-    print(f"  CW pulse  -> GPIO{PIN_CW_PULSE}")
-    print(f"  CCW pulse -> GPIO{PIN_CCW_PULSE}")
-    print(f"  Limit CW  <- GPIO{PIN_LIMIT_CW}")
-    print(f"  Limit CCW <- GPIO{PIN_LIMIT_CCW}")
-    print()
-    print("Trang thai limit switch hien tai:")
-    print(f"  CW limit : {'TRIGGERED (dang an)' if limit_cw.is_pressed else 'tha (open)'}")
-    print(f"  CCW limit: {'TRIGGERED (dang an)' if limit_ccw.is_pressed else 'tha (open)'}")
-    print()
+    arg = sys.argv[1] if len(sys.argv) > 1 else None
 
-    if limit_cw.is_pressed and limit_ccw.is_pressed:
-        print("[!] CA HAI limit dang trigger - kiem tra day noi.")
-        print("    Neu khong cam limit: noi GPIO23 va GPIO24 voi 3.3V hoac de pull_up=False.")
-        return
+    motors = []
+    if arg in (None, "1"):
+        motors.append(make("PAN (M1)",
+                           PIN_M1_CW, PIN_M1_CCW,
+                           PIN_M1_LIMIT_CW, PIN_M1_LIMIT_CCW))
+    if arg in (None, "2"):
+        motors.append(make("TILT (M2)",
+                           PIN_M2_CW, PIN_M2_CCW,
+                           PIN_M2_LIMIT_CW, PIN_M2_LIMIT_CCW))
 
-    input("Nhan ENTER de bat dau test (Ctrl+C de huy)...")
+    print("Khoi tao xong cac motor:")
+    for m in motors:
+        print_status(m)
 
     try:
-        n_cw = rotate_until_limit(+1)
-        time.sleep(0.5)
-        n_ccw = rotate_until_limit(-1)
-
-        print()
-        print("=" * 55)
-        print(f" TONG KET:  CW = {n_cw} steps   |   CCW = {n_ccw} steps")
-        print(f" Khoang chuyen dong toi da = {max(n_cw, n_ccw) * STEP_DEG:.1f} deg")
-        print("=" * 55)
-
+        input("\nNhan ENTER de bat dau test (Ctrl+C de huy)...")
+        for m in motors:
+            test_one_motor(m)
     except KeyboardInterrupt:
-        print("\n[!] DUNG KHAN CAP (Ctrl+C)")
-
+        print("\n[!] DUNG KHAN CAP.")
     finally:
-        cw_pin.off()
-        ccw_pin.off()
-        print("Cleanup done.")
+        for m in motors:
+            m.cleanup()
+        print("\nCleanup done.")
 
 
 if __name__ == "__main__":
