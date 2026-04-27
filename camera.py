@@ -1,17 +1,101 @@
 import cv2
+import os
 import threading
 import time
-from config import *
+from config import CAMERA_ID, USE_PICAMERA, FRAME_WIDTH, FRAME_HEIGHT
 
-class Camera:
+
+class _USBCamera:
+    """Camera USB / V4L2 voi auto-detect index."""
+
     def __init__(self):
-        self.cap = cv2.VideoCapture(CAMERA_ID, cv2.CAP_V4L2)
+        self.cap = None
+
+        if CAMERA_ID >= 0:
+            tried = [CAMERA_ID]
+            self.cap = self._try_open(CAMERA_ID)
+
+        # Auto-detect khi CAMERA_ID = -1 hoac mo that bai
+        if self.cap is None or not self.cap.isOpened():
+            tried = []
+            for idx in range(0, 10):
+                if not os.path.exists(f"/dev/video{idx}"):
+                    continue
+                tried.append(idx)
+                cap = self._try_open(idx)
+                if cap is not None and cap.isOpened():
+                    print(f"[CAMERA] Auto-detected: /dev/video{idx}")
+                    self.cap = cap
+                    break
+
+            if self.cap is None or not self.cap.isOpened():
+                raise RuntimeError(
+                    f"Khong mo duoc camera USB. Da thu cac index: {tried}. "
+                    f"Chay `ls /dev/video*` va `v4l2-ctl --list-devices` de kiem tra."
+                )
+
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
         self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
-        if not self.cap.isOpened():
-            raise RuntimeError("Kh�ng m? du?c camera")
+    @staticmethod
+    def _try_open(idx):
+        cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
+        if cap.isOpened():
+            return cap
+        cap.release()
+        cap = cv2.VideoCapture(idx)  # fallback backend mac dinh
+        return cap if cap.isOpened() else None
+
+    def read(self):
+        return self.cap.read()
+
+    def release(self):
+        if self.cap is not None:
+            self.cap.release()
+
+
+class _PiCamera2Wrapper:
+    """Pi Camera Module qua libcamera/picamera2 (Pi5)."""
+
+    def __init__(self):
+        try:
+            from picamera2 import Picamera2
+        except ImportError as e:
+            raise RuntimeError(
+                "Chua cai picamera2. Chay: sudo apt install -y python3-picamera2"
+            ) from e
+
+        self.picam2 = Picamera2()
+        cfg = self.picam2.create_video_configuration(
+            main={"size": (FRAME_WIDTH, FRAME_HEIGHT), "format": "RGB888"}
+        )
+        self.picam2.configure(cfg)
+        self.picam2.start()
+        time.sleep(0.5)
+
+    def read(self):
+        frame_rgb = self.picam2.capture_array()
+        # picamera2 tra ve RGB; OpenCV can BGR
+        frame = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+        return True, frame
+
+    def release(self):
+        try:
+            self.picam2.stop()
+            self.picam2.close()
+        except Exception:
+            pass
+
+
+class Camera:
+    def __init__(self):
+        if USE_PICAMERA:
+            print("[CAMERA] Dung Pi Camera Module (picamera2)")
+            self._impl = _PiCamera2Wrapper()
+        else:
+            print("[CAMERA] Dung USB camera (V4L2)")
+            self._impl = _USBCamera()
 
         self.running = True
         self.ret = False
@@ -21,9 +105,8 @@ class Camera:
         self.thread.start()
 
     def _update(self):
-        """�?c camera LI�N T?C, kh�ng sleep"""
         while self.running:
-            ret, frame = self.cap.read()
+            ret, frame = self._impl.read()
             if ret:
                 self.ret = True
                 self.frame = frame
@@ -38,4 +121,4 @@ class Camera:
     def release(self):
         self.running = False
         time.sleep(0.1)
-        self.cap.release()
+        self._impl.release()
