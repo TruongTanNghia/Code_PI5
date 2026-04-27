@@ -14,19 +14,23 @@ TILT_MIN, TILT_MAX = 50, 130
 KP = 0.025
 DEAD_ZONE = 20
 
-# ===== STEPPER (Autonics A16K-M569 + MD5-HD14 qua PC817) =====
-# GPIO BCM pin (sua tuy theo cach anh dau day)
-# Motor 1 = PAN (xoay trai/phai)
-PIN_M1_CW         = 27   # -> PC817 IN1 -> driver 1 CW-
-PIN_M1_CCW        = 22   # -> PC817 IN2 -> driver 1 CCW-
-PIN_M1_LIMIT_CW   = 23   # <- limit switch ben CW cua motor 1 (None neu chua co)
-PIN_M1_LIMIT_CCW  = 24   # <- limit switch ben CCW cua motor 1
+# ===== STEPPER (Autonics A16K-M569 + MD5-HD14 qua PC817 4-kenh) =====
+# Sap xep theo so do thuc te tren Pi5:
+#   Motor 1 = PAN (trai/phai)
+PIN_M1_CW         = 17   # GPIO17 -> PC817 IN1 -> driver 1 CW-
+PIN_M1_CCW        = 27   # GPIO27 -> PC817 IN2 -> driver 1 CCW-
+PIN_M1_LIMIT_MIN  = 5    # GPIO5  <- cong tac MIN (cham khi quay CCW het co)
+PIN_M1_LIMIT_MAX  = 6    # GPIO6  <- cong tac MAX (cham khi quay CW het co)
 
-# Motor 2 = TILT (xoay len/xuong)
-PIN_M2_CW         = 5    # -> PC817 IN3 -> driver 2 CW-
-PIN_M2_CCW        = 6    # -> PC817 IN4 -> driver 2 CCW-
-PIN_M2_LIMIT_CW   = 25   # <- limit switch ben CW cua motor 2 (None neu chua co)
-PIN_M2_LIMIT_CCW  = 16   # <- limit switch ben CCW cua motor 2
+#   Motor 2 = TILT (len/xuong)
+PIN_M2_CW         = 22   # GPIO22 -> PC817 IN3 -> driver 2 CW-
+PIN_M2_CCW        = 23   # GPIO23 -> PC817 IN4 -> driver 2 CCW-
+PIN_M2_LIMIT_MIN  = 13   # GPIO13 <- cong tac MIN
+PIN_M2_LIMIT_MAX  = 19   # GPIO19 <- cong tac MAX
+
+# Loai cong tac: True = NC (Normally Closed) - sai-an-toan, day dut = coi nhu cham
+#                False = NO (Normally Open) - dong khi cham
+SWITCH_NC = True
 
 STEPPER_PULSE_HIGH = 0.0005   # 500us cao
 STEPPER_PULSE_LOW  = 0.0005   # 500us thap -> 1000 step/s
@@ -40,7 +44,7 @@ DET_IMGSZ = 320         # giam xuong 256 hoac 192 neu can nhanh hon nua
 DET_PERSIST_FRAMES = 5  # giu hien thi box them N frame sau khi mat detect (chong nhay)
 
 # ===== LASER =====
-LASER_PIN = 17              # GPIO BCM (chan vat ly 11) - dung GPIO Pi5
+LASER_PIN = 18              # GPIO18 -> PC817 rieng -> module laser
 LOCK_THRESHOLD = 25         # khoang cach px tu tam camera de coi la "khoa muc tieu"
 LOCK_FRAMES_REQUIRED = 3    # so frame lien tuc trong vung khoa truoc khi ban
 LASER_BURST_TIME = 0.4      # thoi gian ban moi lan (giay)

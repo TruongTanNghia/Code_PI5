@@ -1,52 +1,69 @@
 """
 Class dieu khien stepper Autonics A16K-M569 + driver MD5-HD14
-qua module PC817 4-kenh (cach ly + buffer).
+qua module PC817 4-kenh + cong tac hanh trinh (limit switch).
 
-LUU Y VE PC817:
-- Pi GPIO HIGH -> LED PC817 sang -> transistor dan -> CW-/CCW- ve GND
-  -> driver thay 1 xung -> motor di 1 buoc.
-- Tin hieu khong bi nguoc (HIGH on Pi = pulse on driver).
+QUY UOC HUONG:
+- CW (clockwise) = quay ve phia MAX
+- CCW (counter-cw) = quay ve phia MIN
 
-LIMIT SWITCH:
-- COM -> GND, NO -> GPIO (code bat pull_up=True)
-- Tha = HIGH; Cham = LOW => `is_pressed = True`.
-- Khi triggered, ham step() khong phat xung, tra ve False.
+CONG TAC NC (Normally Closed) - mac dinh, an toan hon:
+- Tha     -> COM-NC dong -> GPIO ve GND (LOW) -> coi nhu CHUA cham
+- Cham    -> COM-NC mo   -> GPIO float HIGH   -> CHAM (triggered)
+- Day dut -> tuong duong "cham" -> motor dung -> sai-an-toan (fail-safe)
+
+CONG TAC NO (Normally Open) - dao lai:
+- Tha  -> mo   -> GPIO HIGH (pull-up) -> CHUA cham
+- Cham -> dong -> GPIO LOW            -> CHAM
 """
 import time
 from gpiozero import OutputDevice, Button
 from gpiozero.pins.lgpio import LGPIOFactory
 from gpiozero import Device
 
-# Set 1 lan duy nhat cho ca process (an toan neu goi nhieu lan)
 if not isinstance(Device.pin_factory, LGPIOFactory):
     Device.pin_factory = LGPIOFactory()
 
 
 class Stepper:
     def __init__(self, name, pin_cw, pin_ccw,
-                 pin_limit_cw=None, pin_limit_ccw=None,
+                 pin_limit_max=None, pin_limit_min=None,
+                 switch_nc=True,
                  pulse_high=0.0005, pulse_low=0.0005, step_deg=0.72):
         self.name = name
         self.cw = OutputDevice(pin_cw, initial_value=False)
         self.ccw = OutputDevice(pin_ccw, initial_value=False)
-        self.limit_cw = (Button(pin_limit_cw, pull_up=True, bounce_time=0.02)
-                         if pin_limit_cw is not None else None)
-        self.limit_ccw = (Button(pin_limit_ccw, pull_up=True, bounce_time=0.02)
-                          if pin_limit_ccw is not None else None)
+        self.switch_nc = switch_nc
+
+        # Both NC and NO use pull_up=True. We invert logic for NC.
+        self.limit_max = (Button(pin_limit_max, pull_up=True, bounce_time=0.02)
+                          if pin_limit_max is not None else None)
+        self.limit_min = (Button(pin_limit_min, pull_up=True, bounce_time=0.02)
+                          if pin_limit_min is not None else None)
+
         self.pulse_high = pulse_high
         self.pulse_low = pulse_low
         self.step_deg = step_deg
-        self.position = 0  # so step ke tu khi khoi tao (CW = +, CCW = -)
+        self.position = 0  # so step ke tu khoi tao (CW = +, CCW = -)
+
+    def _is_triggered(self, button):
+        """True neu cong tac dang bi cham (xet ca NC va NO)."""
+        if button is None:
+            return False
+        if self.switch_nc:
+            # NC: tha = LOW = is_pressed True; cham = HIGH = is_pressed False
+            return not button.is_pressed
+        else:
+            # NO: cham = LOW = is_pressed True
+            return button.is_pressed
 
     def is_blocked(self, direction):
-        if direction > 0 and self.limit_cw is not None and self.limit_cw.is_pressed:
-            return True
-        if direction < 0 and self.limit_ccw is not None and self.limit_ccw.is_pressed:
-            return True
-        return False
+        """direction > 0 = CW (toi MAX); direction < 0 = CCW (toi MIN)."""
+        if direction > 0:
+            return self._is_triggered(self.limit_max)
+        else:
+            return self._is_triggered(self.limit_min)
 
     def step(self, direction):
-        """Phat 1 xung. Tra ve False neu cham limit (khong phat)."""
         if self.is_blocked(direction):
             return False
         pin = self.cw if direction > 0 else self.ccw
@@ -58,7 +75,6 @@ class Stepper:
         return True
 
     def rotate_steps(self, n_steps):
-        """Quay n_steps. n_steps duong = CW, am = CCW. Tra ve so step thuc te di duoc."""
         direction = 1 if n_steps > 0 else -1
         target = abs(int(n_steps))
         done = 0
@@ -69,7 +85,6 @@ class Stepper:
         return done * direction
 
     def rotate_degrees(self, deg):
-        """Quay theo do (xap xi). Duong = CW, am = CCW."""
         steps = int(round(deg / self.step_deg))
         return self.rotate_steps(steps) * self.step_deg
 
@@ -86,8 +101,8 @@ class Stepper:
             "name": self.name,
             "position_steps": self.position,
             "position_deg": self.position * self.step_deg,
-            "limit_cw_triggered": self.limit_cw.is_pressed if self.limit_cw else None,
-            "limit_ccw_triggered": self.limit_ccw.is_pressed if self.limit_ccw else None,
+            "limit_max_triggered": self._is_triggered(self.limit_max) if self.limit_max else None,
+            "limit_min_triggered": self._is_triggered(self.limit_min) if self.limit_min else None,
         }
 
     def stop(self):
@@ -98,7 +113,7 @@ class Stepper:
         self.stop()
         try:
             self.cw.close(); self.ccw.close()
-            if self.limit_cw: self.limit_cw.close()
-            if self.limit_ccw: self.limit_ccw.close()
+            if self.limit_max: self.limit_max.close()
+            if self.limit_min: self.limit_min.close()
         except Exception:
             pass
