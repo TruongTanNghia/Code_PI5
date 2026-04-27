@@ -1,7 +1,7 @@
+import os
 import torch
 
 # Patch torch.load: PyTorch 2.6+ doi default weights_only=True khien YOLO khong load duoc.
-# Day la model do chinh anh train nen tin tuong, set weights_only=False.
 _orig_torch_load = torch.load
 def _patched_load(*args, **kwargs):
     kwargs["weights_only"] = False
@@ -9,17 +9,27 @@ def _patched_load(*args, **kwargs):
 torch.load = _patched_load
 
 from ultralytics import YOLO
+from config import MODEL_PATH, DET_CONF, DET_IMGSZ
 
 
 class MouseDetector:
-    def __init__(self, model_path="./results-mouse/best.pt"):
-        self.model = YOLO(model_path)
+    def __init__(self, model_path=None):
+        path = model_path or MODEL_PATH
+        if not os.path.exists(path):
+            raise FileNotFoundError(
+                f"Khong tim thay model: {path}\n"
+                f"Neu can NCNN, chay: python export_ncnn.py"
+            )
+        print(f"[DETECTOR] Load model: {path}")
+        self.model = YOLO(path)
+        self.conf = DET_CONF
+        self.imgsz = DET_IMGSZ
 
     def detect(self, frame):
         results = self.model.predict(
             frame,
-            imgsz=320,
-            conf=0.35,
+            imgsz=self.imgsz,
+            conf=self.conf,
             device="cpu",
             max_det=10,
             verbose=False,
