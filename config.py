@@ -33,9 +33,10 @@ PIN_M2_LIMIT_MAX  = 19   # GPIO19 <- cong tac MAX
 #   False = NO (Normally Open)   - dong khi cham (HW thuc te dang dung)
 SWITCH_NC = False
 
-STEPPER_PULSE_HIGH = 0.0005   # 500us cao
-STEPPER_PULSE_LOW  = 0.0005   # 500us thap -> 1000 step/s
+STEPPER_PULSE_HIGH = 0.0005   # 500us cao  (toc do "san xuat" = 1000 step/s)
+STEPPER_PULSE_LOW  = 0.0005   # 500us thap
 STEPPER_STEP_DEG   = 0.72     # A16K-M569: 0.72 deg/step (fullstep)
+STEPPER_TEST_SPS   = 100      # Toc do test: 100 step/s (~72 deg/s) - cham, an toan
 
 # ===== DETECTOR =====
 MODEL_PATH = "./results-mouse/best_ncnn_model"  # NCNN nhanh hon .pt 3-5x tren Pi5
