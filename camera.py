@@ -45,15 +45,15 @@ class _USBCamera:
 
     @staticmethod
     def _try_open(idx):
-        """Mo + thu doc 1 frame de xac nhan device thuc su capture duoc."""
+        """Mo + xac nhan device la RGB capture (3 kenh BGR), bo qua depth/IR/metadata."""
         for backend in (cv2.CAP_V4L2, cv2.CAP_ANY):
             cap = cv2.VideoCapture(idx, backend)
             if not cap.isOpened():
                 cap.release()
                 continue
-            # Phai doc duoc frame thuc te (nhieu /dev/video* tren Pi5 la metadata)
             ok, frame = cap.read()
-            if ok and frame is not None and frame.size > 0:
+            # Chi nhan frame mau 3 kenh; loai Z16 (depth) va GREY (IR) cua RealSense
+            if ok and frame is not None and frame.ndim == 3 and frame.shape[2] == 3:
                 return cap
             cap.release()
         return None

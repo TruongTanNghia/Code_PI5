@@ -1,4 +1,4 @@
-CAMERA_ID = 0           # USB webcam: thuong la 0. Dat -1 de tu dong do tu /dev/video0..9
+CAMERA_ID = 4           # RealSense D435: video4 = RGB. USB webcam thuong: 0. Dat -1 de auto-detect
 USE_PICAMERA = False    # True neu dung Pi Camera Module (cap CSI ribbon)
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 480
