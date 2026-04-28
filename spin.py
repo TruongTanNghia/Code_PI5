@@ -1,15 +1,17 @@
 """
 TEST 4 KENH PC817 - DON GIAN NHAT.
 
-Phat xung 5 step/giay vao 1 chan, chay den khi Ctrl+C.
-
 Cach dung:
-    python spin.py 1     # test kenh U1 (GPIO17 -> IN1 -> U1 -> driver1 CW-)
-    python spin.py 2     # test kenh U2 (GPIO27 -> IN2 -> U2 -> driver1 CCW-)
-    python spin.py 3     # test kenh U3 (GPIO22 -> IN3 -> U3 -> driver2 CW-)
-    python spin.py 4     # test kenh U4 (GPIO23 -> IN4 -> U4 -> driver2 CCW-)
+    python spin.py 1            # kenh U1, 200 step/s (default - thay motor xoay ro)
+    python spin.py 1 500        # kenh U1, 500 step/s (rat nhanh)
+    python spin.py 1 50         # kenh U1, 50 step/s (cham, de quan sat LED)
+    python spin.py 1 5          # kenh U1, 5 step/s (cuc cham)
 
-Mac dinh (khong tham so) la kenh 1.
+Kenh:
+    1 = U1 (driver1 CW  - motor1 thuan)
+    2 = U2 (driver1 CCW - motor1 nguoc)
+    3 = U3 (driver2 CW  - motor2 thuan)
+    4 = U4 (driver2 CCW - motor2 nguoc)
 """
 import sys
 import time
@@ -23,28 +25,26 @@ from config import (
     PIN_M2_CW, PIN_M2_CCW,
 )
 
-# Mapping: so kenh -> (GPIO, ten, mo ta)
 CHANNELS = {
-    "1": (PIN_M1_CW,  "U1", "Driver 1 - CW  (motor 1 quay thuan)"),
-    "2": (PIN_M1_CCW, "U2", "Driver 1 - CCW (motor 1 quay nguoc)"),
-    "3": (PIN_M2_CW,  "U3", "Driver 2 - CW  (motor 2 quay thuan)"),
-    "4": (PIN_M2_CCW, "U4", "Driver 2 - CCW (motor 2 quay nguoc)"),
+    "1": (PIN_M1_CW,  "U1", "Driver 1 - CW  (motor 1 thuan)"),
+    "2": (PIN_M1_CCW, "U2", "Driver 1 - CCW (motor 1 nguoc)"),
+    "3": (PIN_M2_CW,  "U3", "Driver 2 - CW  (motor 2 thuan)"),
+    "4": (PIN_M2_CCW, "U4", "Driver 2 - CCW (motor 2 nguoc)"),
 }
 
 ch = sys.argv[1] if len(sys.argv) > 1 else "1"
+sps = int(sys.argv[2]) if len(sys.argv) > 2 else 200  # mac dinh 200 step/s
+
 if ch not in CHANNELS:
-    print(f"Sai tham so. Dung: python spin.py [1|2|3|4]")
-    print(f"  1 = kenh U1 (motor 1 thuan)")
-    print(f"  2 = kenh U2 (motor 1 nguoc)")
-    print(f"  3 = kenh U3 (motor 2 thuan)")
-    print(f"  4 = kenh U4 (motor 2 nguoc)")
+    print(f"Sai tham so. Dung: python spin.py [1|2|3|4] [step/giay]")
     sys.exit(1)
 
 PIN, U_NAME, DESC = CHANNELS[ch]
 
-# Xung 50ms HIGH + 150ms LOW = 5 step/giay
-PULSE_HIGH = 0.05
-PULSE_LOW  = 0.15
+# Tinh chu ky xung tu sps (step per second)
+half = 0.5 / sps
+PULSE_HIGH = half
+PULSE_LOW  = half
 
 pin = OutputDevice(PIN, initial_value=False)
 
@@ -55,33 +55,43 @@ print("=" * 55)
 print(f"  Pi GPIO: {PIN}")
 print(f"  PC817:   IN{ch} -> {U_NAME}")
 print(f"  {DESC}")
-print(f"  Xung: 50ms HIGH + 150ms LOW = 5 step/giay")
-print()
-print("KIEM TRA:")
-print(f"  1. LED PC817 kenh {ch} co nhay khong?")
-print(f"  2. Motor (cua driver tuong ung) co quay khong?")
+print(f"  Toc do: {sps} step/giay = {sps * 0.72:.1f} deg/giay "
+      f"= {sps * 0.72 / 360:.1f} vong/giay")
+print(f"  Xung: {PULSE_HIGH*1000:.1f}ms HIGH + {PULSE_LOW*1000:.1f}ms LOW")
 print()
 print("Ctrl+C de dung.")
 print()
 
 count = 0
 t_start = time.time()
+last_print = 0
+
 try:
     while True:
         pin.on()
         time.sleep(PULSE_HIGH)
         pin.off()
-        count += 1
-        elapsed = time.time() - t_start
-        print(f"  >>> KENH {ch} ({U_NAME})  STEP {count:4d}  "
-              f"|  goc: {count * 0.72:7.1f} deg  "
-              f"|  thoi gian: {elapsed:5.1f}s  <<<", flush=True)
         time.sleep(PULSE_LOW)
+        count += 1
+
+        # In trang thai moi 0.3s (de khong spam terminal)
+        now = time.time()
+        if now - last_print >= 0.3:
+            elapsed = now - t_start
+            print(f"  KENH {ch} ({U_NAME})  STEP {count:6d}  "
+                  f"|  goc tich luy: {count * 0.72:8.1f} deg "
+                  f"({count * 0.72 / 360:.2f} vong)  "
+                  f"|  {elapsed:5.1f}s", flush=True)
+            last_print = now
 
 except KeyboardInterrupt:
+    elapsed = time.time() - t_start
     print()
-    print(f"\nDA DUNG. Tong: {count} step ({count * 0.72:.1f} deg) "
-          f"trong {time.time() - t_start:.1f} giay.")
+    print(f"\nDA DUNG.")
+    print(f"  Tong: {count} step ({count * 0.72:.1f} deg = "
+          f"{count * 0.72 / 360:.2f} vong)")
+    print(f"  Thoi gian: {elapsed:.1f}s")
+    print(f"  Toc do thuc te: {count/elapsed:.0f} step/giay")
 
 finally:
     pin.off()
