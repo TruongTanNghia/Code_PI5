@@ -1,20 +1,15 @@
 /*
- * motor_test.ino - V3 (dua tren CODE GOC cua anh, da test work)
+ * motor_test.ino - V4 (clean first pulse via Serial.flush)
  *
- * Su dung run_smooth() y het code goc cua anh, them check Serial moi 128 step
- * de co the dung giua chung neu Pi gui 's'.
+ * V3 in print xuong Serial truoc khi run_smooth -> TX interrupt firing
+ * khi motor bat dau xung dau tien -> motor 5-phase mat sync -> twitch.
  *
- * SO DO DAU NOI:
- *   D2  -> Driver 1 CW-   (motor 1 thuan)
- *   D3  -> Driver 1 CCW-  (motor 1 nguoc)
- *   D4  -> Driver 2 CW-   (motor 2 thuan)
- *   D5  -> Driver 2 CCW-  (motor 2 nguoc)
- *   5V  -> CW+ va CCW+ ca 2 driver
- *   GND -> GND ca 2 driver
+ * V4 fix: Serial.flush() truoc run_smooth de cho TX buffer rong han
+ *         truoc khi bat dau phat xung -> xung dau tien CHE
  *
- * LENH (Serial 9600):
- *   1 -> M1 thuan, 2 -> M1 nguoc, 3 -> M2 thuan, 4 -> M2 nguoc
- *   s -> STOP (dung giua chung)
+ * SO DO DAU NOI: D2/D3/D4/D5 -> CW-/CCW- driver, 5V -> CW+/CCW+, GND -> GND
+ *
+ * LENH: 1=M1+ 2=M1- 3=M2+ 4=M2- s=STOP
  */
 
 #define PIN_M1_CW  2
@@ -22,12 +17,11 @@
 #define PIN_M2_CW  4
 #define PIN_M2_CCW 5
 
-// THONG SO CHINH XAC GIONG CODE GOC CUA ANH (da test work)
 int start_delay = 5000;
 int min_delay   = 1500;
 int step_change = 50;
 
-const long MAX_STEPS = 1000000L;   // gan nhu khong gioi han, chi dung khi 's' den
+const long MAX_STEPS = 1000000L;
 
 
 void pulse(int pin, int d) {
@@ -60,7 +54,7 @@ void run_smooth(int pin, long steps) {
   for (long i = 0; i < steps; i++) {
     pulse(pin, min_delay);
 
-    if ((i & 0x7F) == 0) {     // 0x7F = 127 (& nhanh hon %)
+    if ((i & 0x7F) == 0) {
       if (stopRequested()) break;
     }
   }
@@ -91,9 +85,9 @@ void setup() {
 
   delay(100);
   Serial.println();
-  Serial.println(F("=== MOTOR v3 (orig + serial stop) ==="));
+  Serial.println(F("=== MOTOR v4 (clean first pulse) ==="));
   Serial.println(F("1=M1+ 2=M1- 3=M2+ 4=M2- s=STOP"));
-  Serial.println();
+  Serial.flush();   // dam bao banner gui xong truoc khi nhan lenh
 }
 
 
@@ -108,21 +102,22 @@ void loop() {
       case '2': pin = PIN_M1_CCW; name = "M1 nguoc (D3)"; break;
       case '3': pin = PIN_M2_CW;  name = "M2 thuan (D4)"; break;
       case '4': pin = PIN_M2_CCW; name = "M2 nguoc (D5)"; break;
-      case 's': case 'S':
-        // s nhan ngoai run_smooth -> idle, khong lam gi
-        return;
-      default:
-        return;
+      default: return;
     }
 
     if (pin < 0) return;
 
+    // QUAN TRONG: in roi flush truoc khi spin motor
+    // Neu khong flush, byte van dang gui qua TX interrupt
+    // -> jitter pulse dau tien -> motor 5-phase mat sync
     Serial.print(F(">>> SPIN "));
     Serial.println(name);
+    Serial.flush();   // CHO TX BUFFER RONG HAN
 
     run_smooth(pin, MAX_STEPS);
     setAllLow();
 
-    Serial.println(F(">>> STOP/DONE"));
+    Serial.println(F(">>> DONE"));
+    Serial.flush();
   }
 }
