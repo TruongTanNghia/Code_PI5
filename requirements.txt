@@ -4,6 +4,8 @@ adafruit-blinka
 adafruit-circuitpython-pca9685
 gpiozero
 lgpio
+# Giao tiep voi Arduino qua USB Serial (file arduino_motor.py)
+pyserial
 # Tuy chon: cho RealSense D435 depth (xem detect_with_depth.py)
 pyrealsense2
 # Tuy chon: cho NCNN export (nhanh hon .pt 3-5x tren Pi5)
