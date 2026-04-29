@@ -1,23 +1,25 @@
 /*
- * motor_test.ino - V7 (gan giong code goc cua anh nhat co the)
+ * motor_test.ino - V8 (DIAGNOSTIC: OLD code + Serial.begin only)
  *
- * Code GIONG HET code goc cua anh, chi them:
- *   - Serial.begin(9600)
- *   - Lenh '1'/'2'/'3'/'4' tu Serial -> goi run_smooth tuong ung
- *   - Khong co print, khong co flush, khong co stop check
- *   - Motor quay xong 800 step roi tu dung (giong code goc)
+ * Y CHANG code goc cua anh, chi them 1 dong Serial.begin(9600).
+ * KHONG co Serial.read, KHONG co print, KHONG xu ly lenh.
+ * Auto-run forever giong code goc.
  *
- * Neu V7 NAY khong chay -> phai chuyen huong khac (vd Pi5 GPIO truc tiep).
+ * MUC DICH: kiem tra xem chi viec enable Serial co lam motor twitch khong.
  *
- * SO DO DAU NOI: D2/D3/D4/D5 -> CW-/CCW- driver, 5V -> CW+/CCW+, GND -> GND
+ * Sau khi upload, motor PHAI quay nhu code goc:
+ *   - Quay thuan 800 step (~2.4 giay)
+ *   - Cho 2 giay
+ *   - Quay nguoc 800 step
+ *   - Cho 3 giay
+ *   - Lap lai
  *
- * LENH: 1=M1+ 2=M1- 3=M2+ 4=M2- (moi lenh chay 800 step)
+ * Neu motor van twitch -> Serial.begin co tac dong -> can fix.
+ * Neu motor quay binh thuong -> Serial.begin OK, van de o cho khac.
  */
 
-#define M1_CW  2
-#define M1_CCW 3
-#define M2_CW  4
-#define M2_CCW 5
+#define CW 2
+#define CCW 3
 
 int start_delay = 5000;
 int min_delay = 1500;
@@ -46,35 +48,19 @@ void run_smooth(int pin, int steps) {
 
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(9600);   // <-- DONG DUY NHAT KHAC code goc
 
-  pinMode(M1_CW,  OUTPUT);
-  pinMode(M1_CCW, OUTPUT);
-  pinMode(M2_CW,  OUTPUT);
-  pinMode(M2_CCW, OUTPUT);
-
-  digitalWrite(M1_CW,  LOW);
-  digitalWrite(M1_CCW, LOW);
-  digitalWrite(M2_CW,  LOW);
-  digitalWrite(M2_CCW, LOW);
-
-  Serial.println(F("V7 ready. Send 1/2/3/4"));
+  pinMode(CW, OUTPUT);
+  pinMode(CCW, OUTPUT);
+  digitalWrite(CW, LOW);
+  digitalWrite(CCW, LOW);
 }
 
 
 void loop() {
-  if (Serial.available()) {
-    char c = Serial.read();
-    int pin = -1;
+  run_smooth(CW, 800);
+  delay(2000);
 
-    if (c == '1') pin = M1_CW;
-    else if (c == '2') pin = M1_CCW;
-    else if (c == '3') pin = M2_CW;
-    else if (c == '4') pin = M2_CCW;
-    else return;
-
-    // KHONG print gi ca - giu code y nhu OLD code, run_smooth ngay
-    run_smooth(pin, 800);
-    digitalWrite(pin, LOW);
-  }
+  run_smooth(CCW, 800);
+  delay(3000);
 }
