@@ -1,8 +1,8 @@
 /*
- * motor_test.ino - SIMPLE VERSION
+ * motor_test.ino - LIEN TUC + STOP
  *
- * Giong code cu cua anh (chay duoc), chi them Serial de chon kenh.
- * KHONG co Serial.print khi dang quay -> khong gian doan xung.
+ * Mode: nhan lenh -> quay LIEN TUC voi tang toc.
+ *       Nhan 's' -> dung NGAY (giam toc nhe).
  *
  * SO DO DAU NOI:
  *   D2  -> Driver 1 CW-   (motor 1 thuan)
@@ -12,14 +12,12 @@
  *   5V  -> CW+ va CCW+ ca 2 driver
  *   GND -> GND ca 2 driver
  *
- * CACH DUNG (Serial Monitor 9600 baud, hoac arduino_motor.py):
- *   1 -> motor 1 quay thuan, 1000 step (~720 deg)
- *   2 -> motor 1 quay nguoc, 1000 step
- *   3 -> motor 2 quay thuan, 1000 step
- *   4 -> motor 2 quay nguoc, 1000 step
- *
- * Khi nhan lenh -> motor quay tron 1000 step roi tu dung.
- * Khong nhan duoc lenh moi khi dang quay (de pulse khong bi gian doan).
+ * LENH (qua Serial 9600 baud):
+ *   1 -> motor 1 quay thuan LIEN TUC
+ *   2 -> motor 1 quay nguoc LIEN TUC
+ *   3 -> motor 2 quay thuan LIEN TUC
+ *   4 -> motor 2 quay nguoc LIEN TUC
+ *   s -> DUNG NGAY
  */
 
 #define PIN_M1_CW  2
@@ -27,76 +25,90 @@
 #define PIN_M2_CW  4
 #define PIN_M2_CCW 5
 
-const int START_DELAY = 5000;   // bat dau cuc cham (~100 step/s)
+const int START_DELAY = 5000;   // bat dau cham (~100 step/s)
 const int MIN_DELAY   = 1500;   // toc do toi da (~333 step/s)
-const int RAMP_STEP   = 50;     // do muot
-const int RUN_STEPS   = 1000;   // so step chay deu (1000 * 0.72 = 720 deg = 2 vong)
+const int RAMP_STEP   = 50;     // do muot tang toc
+
+int activePin = -1;             // pin dang phat xung (-1 = idle)
+int currentDelay = START_DELAY;
+unsigned long stepCount = 0;
 
 
-void pulse(int pin, int d) {
-  digitalWrite(pin, HIGH);
-  delayMicroseconds(d);
-  digitalWrite(pin, LOW);
-  delayMicroseconds(d);
+void setAllLow() {
+  digitalWrite(PIN_M1_CW,  LOW);
+  digitalWrite(PIN_M1_CCW, LOW);
+  digitalWrite(PIN_M2_CW,  LOW);
+  digitalWrite(PIN_M2_CCW, LOW);
 }
 
 
-void run_smooth(int pin, int steps) {
-  // Tang toc
-  for (int d = START_DELAY; d > MIN_DELAY; d -= RAMP_STEP) {
-    pulse(pin, d);
-  }
-  // Chay deu
-  for (int i = 0; i < steps; i++) {
-    pulse(pin, MIN_DELAY);
-  }
-  // Giam toc
-  for (int d = MIN_DELAY; d < START_DELAY; d += RAMP_STEP) {
-    pulse(pin, d);
-  }
+void startSpin(int pin, const char* name) {
+  setAllLow();
+  activePin = pin;
+  currentDelay = START_DELAY;
+  stepCount = 0;
+  Serial.print(F(">>> SPIN "));
+  Serial.print(name);
+  Serial.println(F(" - lien tuc"));
+}
+
+
+void stopSpin() {
+  setAllLow();
+  activePin = -1;
+  Serial.print(F(">>> STOP. Tong: "));
+  Serial.print(stepCount);
+  Serial.print(F(" step ("));
+  Serial.print(stepCount * 0.72, 1);
+  Serial.println(F(" deg)"));
 }
 
 
 void setup() {
   Serial.begin(9600);
 
-  pinMode(PIN_M1_CW,  OUTPUT); digitalWrite(PIN_M1_CW,  LOW);
-  pinMode(PIN_M1_CCW, OUTPUT); digitalWrite(PIN_M1_CCW, LOW);
-  pinMode(PIN_M2_CW,  OUTPUT); digitalWrite(PIN_M2_CW,  LOW);
-  pinMode(PIN_M2_CCW, OUTPUT); digitalWrite(PIN_M2_CCW, LOW);
+  pinMode(PIN_M1_CW,  OUTPUT);
+  pinMode(PIN_M1_CCW, OUTPUT);
+  pinMode(PIN_M2_CW,  OUTPUT);
+  pinMode(PIN_M2_CCW, OUTPUT);
+  setAllLow();
 
   delay(100);
   Serial.println();
-  Serial.println(F("=== MOTOR TEST (simple) ==="));
-  Serial.println(F("Go: 1=M1-thuan, 2=M1-nguoc, 3=M2-thuan, 4=M2-nguoc"));
-  Serial.print(F("Moi lenh quay "));
-  Serial.print(RUN_STEPS);
-  Serial.println(F(" step (~720 deg) roi tu dung."));
+  Serial.println(F("=== MOTOR (continuous + stop) ==="));
+  Serial.println(F("1=M1+ 2=M1- 3=M2+ 4=M2- s=STOP"));
   Serial.println();
 }
 
 
 void loop() {
+  // Check Serial - non-blocking
   if (Serial.available()) {
     char c = Serial.read();
-    int pin = -1;
-    const char* name = "";
     switch (c) {
-      case '1': pin = PIN_M1_CW;  name = "M1 thuan (D2)"; break;
-      case '2': pin = PIN_M1_CCW; name = "M1 nguoc (D3)"; break;
-      case '3': pin = PIN_M2_CW;  name = "M2 thuan (D4)"; break;
-      case '4': pin = PIN_M2_CCW; name = "M2 nguoc (D5)"; break;
-      default: return;  // bo qua \n, \r, ky tu khac
+      case '1': startSpin(PIN_M1_CW,  "M1 thuan (D2)"); break;
+      case '2': startSpin(PIN_M1_CCW, "M1 nguoc (D3)"); break;
+      case '3': startSpin(PIN_M2_CW,  "M2 thuan (D4)"); break;
+      case '4': startSpin(PIN_M2_CCW, "M2 nguoc (D5)"); break;
+      case 's': case 'S':
+        if (activePin >= 0) stopSpin();
+        break;
+      default: break;
     }
+  }
 
-    Serial.print(F(">>> Quay "));
-    Serial.print(name);
-    Serial.print(F(" - "));
-    Serial.print(RUN_STEPS);
-    Serial.println(F(" step..."));
+  // Phat xung neu dang spin
+  if (activePin >= 0) {
+    digitalWrite(activePin, HIGH);
+    delayMicroseconds(currentDelay);
+    digitalWrite(activePin, LOW);
+    delayMicroseconds(currentDelay);
+    stepCount++;
 
-    run_smooth(pin, RUN_STEPS);
-
-    Serial.println(F(">>> XONG. Go lenh tiep."));
+    // Tang toc
+    if (currentDelay > MIN_DELAY) {
+      currentDelay -= RAMP_STEP;
+      if (currentDelay < MIN_DELAY) currentDelay = MIN_DELAY;
+    }
   }
 }
