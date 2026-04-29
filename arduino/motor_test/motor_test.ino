@@ -1,8 +1,11 @@
 /*
- * motor_test.ino - LIEN TUC + STOP
+ * motor_test.ino - LIEN TUC + STOP (TIGHT BURST)
  *
  * Mode: nhan lenh -> quay LIEN TUC voi tang toc.
- *       Nhan 's' -> dung NGAY (giam toc nhe).
+ *       Nhan 's' -> dung NGAY.
+ *
+ * KEY: pulse trong tight burst (50 step / loop) de timing on dinh
+ *      cho motor 5-phase. Stop response ~150ms (acceptable).
  *
  * SO DO DAU NOI:
  *   D2  -> Driver 1 CW-   (motor 1 thuan)
@@ -12,12 +15,9 @@
  *   5V  -> CW+ va CCW+ ca 2 driver
  *   GND -> GND ca 2 driver
  *
- * LENH (qua Serial 9600 baud):
- *   1 -> motor 1 quay thuan LIEN TUC
- *   2 -> motor 1 quay nguoc LIEN TUC
- *   3 -> motor 2 quay thuan LIEN TUC
- *   4 -> motor 2 quay nguoc LIEN TUC
- *   s -> DUNG NGAY
+ * LENH (Serial 9600):
+ *   1 -> M1 thuan, 2 -> M1 nguoc, 3 -> M2 thuan, 4 -> M2 nguoc
+ *   s -> STOP
  */
 
 #define PIN_M1_CW  2
@@ -25,11 +25,12 @@
 #define PIN_M2_CW  4
 #define PIN_M2_CCW 5
 
-const int START_DELAY = 5000;   // bat dau cham (~100 step/s)
-const int MIN_DELAY   = 1500;   // toc do toi da (~333 step/s)
-const int RAMP_STEP   = 50;     // do muot tang toc
+const int START_DELAY = 5000;
+const int MIN_DELAY   = 1500;
+const int RAMP_STEP   = 50;
+const int BURST_SIZE  = 50;     // so step / 1 burst (timing on dinh)
 
-int activePin = -1;             // pin dang phat xung (-1 = idle)
+int activePin = -1;
 int currentDelay = START_DELAY;
 unsigned long stepCount = 0;
 
@@ -75,14 +76,14 @@ void setup() {
 
   delay(100);
   Serial.println();
-  Serial.println(F("=== MOTOR (continuous + stop) ==="));
+  Serial.println(F("=== MOTOR (continuous + stop, burst) ==="));
   Serial.println(F("1=M1+ 2=M1- 3=M2+ 4=M2- s=STOP"));
   Serial.println();
 }
 
 
 void loop() {
-  // Check Serial - non-blocking
+  // === 1. Check Serial command ===
   if (Serial.available()) {
     char c = Serial.read();
     switch (c) {
@@ -97,18 +98,28 @@ void loop() {
     }
   }
 
-  // Phat xung neu dang spin
+  // === 2. Run pulse BURST (tight loop, on dinh timing) ===
   if (activePin >= 0) {
-    digitalWrite(activePin, HIGH);
-    delayMicroseconds(currentDelay);
-    digitalWrite(activePin, LOW);
-    delayMicroseconds(currentDelay);
-    stepCount++;
+    int pin = activePin;            // cache vao bien local cho toc do
+    int delay_us = currentDelay;
+    int min_d = MIN_DELAY;
+    int ramp = RAMP_STEP;
 
-    // Tang toc
-    if (currentDelay > MIN_DELAY) {
-      currentDelay -= RAMP_STEP;
-      if (currentDelay < MIN_DELAY) currentDelay = MIN_DELAY;
+    for (int i = 0; i < BURST_SIZE; i++) {
+      digitalWrite(pin, HIGH);
+      delayMicroseconds(delay_us);
+      digitalWrite(pin, LOW);
+      delayMicroseconds(delay_us);
+
+      // Tang toc trong burst
+      if (delay_us > min_d) {
+        delay_us -= ramp;
+        if (delay_us < min_d) delay_us = min_d;
+      }
     }
+
+    // Cap nhat lai bien global sau burst
+    currentDelay = delay_us;
+    stepCount += BURST_SIZE;
   }
 }
