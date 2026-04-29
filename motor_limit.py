@@ -2,22 +2,20 @@
 Quay motor LIEN TUC qua Arduino. Cham bat ky limit switch nao -> DUNG NGAY.
 
 Yeu cau:
-- Arduino da upload arduino/motor_test/motor_test.ino (continuous + stop)
+- Arduino da upload arduino/motor_test/motor_test.ino (V3)
 - 4 limit switch da noi vao Pi5 (theo config.py)
-- pyserial da cai (pip install pyserial)
+- pyserial da cai
 
 Cach dung:
-    python motor_limit.py 1            # M1 thuan (D2)
-    python motor_limit.py 2            # M1 nguoc (D3)
-    python motor_limit.py 3            # M2 thuan (D4)
-    python motor_limit.py 4            # M2 nguoc (D5)
-
-    python motor_limit.py 1 --port /dev/ttyUSB0     # ep buoc port
+    python motor_limit.py 1                       # M1 thuan + monitor limit
+    python motor_limit.py 2 --no-limits           # M1 nguoc, KHONG monitor limit (de test motor)
+    python motor_limit.py 1 --port /dev/ttyUSB0   # ep buoc port
+    python motor_limit.py 1 --debounce 5          # can 5 lan doc lien tiep moi tinh la pressed (chong nhieu)
 
 Cach hoat dong:
-    1. Pi gui lenh '1' -> Arduino bat dau quay LIEN TUC
-    2. Pi liên tuc check 4 limit switch (~50 lan/giay)
-    3. Khi BAT KY switch nao bi cham -> Pi gui 's' -> Arduino dung
+    1. Pi gui lenh -> Arduino bat dau quay LIEN TUC
+    2. Pi liên tuc check limit switch (50 lan/giay)
+    3. Khi limit cham N lan lien tiep (debounce) -> Pi gui 's' -> Arduino dung
     4. Hoac Ctrl+C -> Pi gui 's' va thoat
 """
 import sys
@@ -54,21 +52,31 @@ def find_arduino_port():
     return candidates[0] if candidates else None
 
 
-# Mapping channel -> ten + limit can quan tam
 CHANNELS = {
-    "1": ("M1 thuan (D2)", PIN_M1_LIMIT_MAX),   # quay thuan -> ve MAX
-    "2": ("M1 nguoc (D3)", PIN_M1_LIMIT_MIN),   # quay nguoc -> ve MIN
+    "1": ("M1 thuan (D2)", PIN_M1_LIMIT_MAX),
+    "2": ("M1 nguoc (D3)", PIN_M1_LIMIT_MIN),
     "3": ("M2 thuan (D4)", PIN_M2_LIMIT_MAX),
     "4": ("M2 nguoc (D5)", PIN_M2_LIMIT_MIN),
 }
 
 
-def is_pressed(button):
-    """NC switch: cham = HIGH (is_pressed False) -> triggered = not is_pressed.
-       NO switch: cham = LOW (is_pressed True) -> triggered = is_pressed."""
+def is_pressed_raw(button):
+    """Doc 1 lan, khong debounce."""
     if button is None:
         return False
     return (not button.is_pressed) if SWITCH_NC else button.is_pressed
+
+
+def is_pressed_debounced(button, n_required=3, sample_delay=0.005):
+    """Doc N lan lien tiep, neu TAT CA deu pressed thi tra ve True.
+    Chong nhieu dien tu tu motor."""
+    if button is None:
+        return False
+    for _ in range(n_required):
+        if not is_pressed_raw(button):
+            return False
+        time.sleep(sample_delay)
+    return True
 
 
 def main():
@@ -77,6 +85,10 @@ def main():
                         help="1/2/3/4")
     parser.add_argument("--port", default=None)
     parser.add_argument("--baud", type=int, default=9600)
+    parser.add_argument("--no-limits", action="store_true",
+                        help="Khong monitor limit switch (chi quay motor)")
+    parser.add_argument("--debounce", type=int, default=3,
+                        help="So lan doc lien tiep de coi la pressed (default 3)")
     parser.add_argument("-h", "--help", action="store_true")
     args = parser.parse_args()
 
@@ -88,9 +100,9 @@ def main():
         print(f"[!] Channel sai: '{args.channel}'. Dung 1/2/3/4")
         sys.exit(1)
 
-    name, watch_pin = CHANNELS[args.channel]
+    name, _ = CHANNELS[args.channel]
 
-    # Mo serial den Arduino
+    # Mo serial
     port = args.port or find_arduino_port()
     if not port:
         print("[!] Khong tim thay Arduino port")
@@ -103,96 +115,88 @@ def main():
         print(f"[!] Loi mo port: {e}")
         sys.exit(1)
 
-    time.sleep(2.0)  # Arduino reset
-    while ser.in_waiting:
-        ser.readline()  # discard banner
-
-    # Mo TAT CA limit switch (de check an toan)
-    all_pins = [
-        ("M1 MIN", PIN_M1_LIMIT_MIN),
-        ("M1 MAX", PIN_M1_LIMIT_MAX),
-        ("M2 MIN", PIN_M2_LIMIT_MIN),
-        ("M2 MAX", PIN_M2_LIMIT_MAX),
-    ]
-    buttons = []
-    for label, pin in all_pins:
-        if pin is None:
-            buttons.append((label, None))
-        else:
-            try:
-                b = Button(pin, pull_up=True, bounce_time=0.02)
-                buttons.append((label, b))
-            except Exception as e:
-                print(f"[!] Khong mo duoc GPIO{pin} cho {label}: {e}")
-                buttons.append((label, None))
-
-    # Check trang thai ban dau
-    print(f"\nTrang thai limit switch hien tai:")
-    for label, b in buttons:
-        if b is None:
-            print(f"  {label}: chua cau hinh")
-        else:
-            state = "TRIGGERED" if is_pressed(b) else "tha"
-            print(f"  {label}: {state}")
-
-    # Neu limit muc tieu dang trigger -> bo qua
-    target_button = next((b for label, b in buttons if all_pins[buttons.index((label, b))][1] == watch_pin), None)
-    # Don gian hon: tim button theo pin
-    target_button = None
-    for label, b in buttons:
-        if b is not None:
-            # Lay pin tu config
-            if (label == "M1 MIN" and watch_pin == PIN_M1_LIMIT_MIN) or \
-               (label == "M1 MAX" and watch_pin == PIN_M1_LIMIT_MAX) or \
-               (label == "M2 MIN" and watch_pin == PIN_M2_LIMIT_MIN) or \
-               (label == "M2 MAX" and watch_pin == PIN_M2_LIMIT_MAX):
-                target_button = (label, b)
-                break
-
-    if target_button and is_pressed(target_button[1]):
-        print(f"\n[!] Limit {target_button[0]} dang TRIGGERED -> khong the quay theo huong nay.")
-        ser.close()
-        sys.exit(1)
-
-    # Gui lenh quay
-    print(f"\n[INFO] Gui lenh '{args.channel}' -> Arduino quay {name}...")
-    ser.write(args.channel.encode())
-    time.sleep(0.1)
+    time.sleep(2.0)
     while ser.in_waiting:
         line = ser.readline().decode(errors="ignore").rstrip()
         if line:
             print(f"  [ARDUINO] {line}")
 
-    print(f"[INFO] Motor dang quay. Cham limit switch -> dung. Ctrl+C -> dung.")
+    # Mo limit switch (neu can)
+    buttons = []
+    if not args.no_limits:
+        all_pins = [
+            ("M1 MIN", PIN_M1_LIMIT_MIN),
+            ("M1 MAX", PIN_M1_LIMIT_MAX),
+            ("M2 MIN", PIN_M2_LIMIT_MIN),
+            ("M2 MAX", PIN_M2_LIMIT_MAX),
+        ]
+        for label, pin in all_pins:
+            if pin is None:
+                buttons.append((label, None))
+            else:
+                try:
+                    # bounce_time cao hon (50ms) de chong nhieu
+                    b = Button(pin, pull_up=True, bounce_time=0.05)
+                    buttons.append((label, b))
+                except Exception as e:
+                    print(f"[!] Khong mo duoc GPIO{pin} cho {label}: {e}")
+                    buttons.append((label, None))
+
+        # In trang thai
+        print(f"\nTrang thai limit switch hien tai (debounce {args.debounce} reads):")
+        for label, b in buttons:
+            if b is None:
+                print(f"  {label}: chua cau hinh")
+            else:
+                state = "TRIGGERED" if is_pressed_debounced(b, args.debounce) else "tha"
+                print(f"  {label}: {state}")
+    else:
+        print("\n[!] CHE DO --no-limits: KHONG monitor limit switch.")
+        print("    Motor se quay den khi anh nhan Ctrl+C.")
+
+    # Gui lenh
+    print(f"\n[INFO] Gui lenh '{args.channel}' -> Arduino quay {name}...")
+    ser.write(args.channel.encode())
+    time.sleep(0.2)
+    while ser.in_waiting:
+        line = ser.readline().decode(errors="ignore").rstrip()
+        if line:
+            print(f"  [ARDUINO] {line}")
+
+    print(f"[INFO] Motor dang quay. ", end="")
+    if args.no_limits:
+        print("Ctrl+C -> dung.")
+    else:
+        print("Cham limit -> dung. Ctrl+C -> dung.")
     print()
 
     # Vong giam sat
     try:
         while True:
-            # Check tat ca limit switch
-            for label, b in buttons:
-                if b is not None and is_pressed(b):
-                    print(f"\n[!] LIMIT {label} CHAM! Gui lenh STOP...")
-                    ser.write(b's')
-                    time.sleep(0.3)
-                    while ser.in_waiting:
-                        line = ser.readline().decode(errors="ignore").rstrip()
-                        if line:
-                            print(f"  [ARDUINO] {line}")
-                    return
+            if not args.no_limits:
+                for label, b in buttons:
+                    if b is not None and is_pressed_debounced(b, args.debounce):
+                        print(f"\n[!] LIMIT {label} CHAM ({args.debounce} reads xac nhan)! Gui STOP...")
+                        ser.write(b's')
+                        time.sleep(0.5)
+                        while ser.in_waiting:
+                            line = ser.readline().decode(errors="ignore").rstrip()
+                            if line:
+                                print(f"  [ARDUINO] {line}")
+                        return
 
-            # Doc output Arduino (neu co)
+            # Doc output Arduino
             if ser.in_waiting:
                 line = ser.readline().decode(errors="ignore").rstrip()
                 if line:
                     print(f"  [ARDUINO] {line}")
 
-            time.sleep(0.02)  # 50 Hz check rate
+            time.sleep(0.02)
 
     except KeyboardInterrupt:
-        print("\n[!] Ctrl+C -> Gui lenh STOP...")
+        print("\n[!] Ctrl+C -> Gui STOP...")
         ser.write(b's')
-        time.sleep(0.3)
+        time.sleep(0.5)
         while ser.in_waiting:
             line = ser.readline().decode(errors="ignore").rstrip()
             if line:
