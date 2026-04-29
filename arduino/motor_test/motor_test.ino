@@ -1,195 +1,102 @@
 /*
- * motor_test.ino
+ * motor_test.ino - SIMPLE VERSION
  *
- * Test stepper Autonics A16K-M569 + driver MD5-HD14.
- * NOI THANG ARDUINO VAO DRIVER (khong qua PC817).
+ * Giong code cu cua anh (chay duoc), chi them Serial de chon kenh.
+ * KHONG co Serial.print khi dang quay -> khong gian doan xung.
  *
  * SO DO DAU NOI:
+ *   D2  -> Driver 1 CW-   (motor 1 thuan)
+ *   D3  -> Driver 1 CCW-  (motor 1 nguoc)
+ *   D4  -> Driver 2 CW-   (motor 2 thuan)
+ *   D5  -> Driver 2 CCW-  (motor 2 nguoc)
+ *   5V  -> CW+ va CCW+ ca 2 driver
+ *   GND -> GND ca 2 driver
  *
- *   Arduino Uno R3            ->  Driver MD5-HD14
- *   ----------------------------------------------
- *   D2  (output)              ->  CW-   (Driver 1)
- *   D3  (output)              ->  CCW-  (Driver 1)
- *   D4  (output)              ->  CW-   (Driver 2)
- *   D5  (output)              ->  CCW-  (Driver 2)
- *   5V  (cap nguon cho opto)  ->  CW+ va CCW+ cua CA HAI driver
- *   GND                       ->  GND cua CA HAI driver
+ * CACH DUNG (Serial Monitor 9600 baud, hoac arduino_motor.py):
+ *   1 -> motor 1 quay thuan, 1000 step (~720 deg)
+ *   2 -> motor 1 quay nguoc, 1000 step
+ *   3 -> motor 2 quay thuan, 1000 step
+ *   4 -> motor 2 quay nguoc, 1000 step
  *
- *   [Driver 1 & 2]
- *     +24V  ->  V+
- *     GND   ->  V-
- *     5 day mau (BLUE/RED/ORANGE/GREEN/BLACK) -> motor
- *
- * LOGIC TIN HIEU (giong code anh da test thanh cong hom truoc):
- *   - Pulse cycle: HIGH(d us) -> LOW(d us)
- *   - Driver count step tren transition (HIGH->LOW)
- *   - Idle state: LOW (khong phat xung)
- *   - QUAN TRONG: phai TANG TOC TU TU tu cham -> nhanh
- *     (5-phase stepper khong khoi dong duoc o toc do cao ngay tu dau)
- *
- * CACH DUNG (Serial Monitor, baud 9600):
- *   1/2/3/4 -> chon kenh
- *   s       -> dung
- *   v       -> RAT CHAM (50 step/s, khong tang toc)
- *   l       -> CHAM    (100 step/s)
- *   m       -> VUA     (200 step/s) [default]
- *   f       -> NHANH   (333 step/s)
- *   x       -> RAT NHANH (500 step/s)
+ * Khi nhan lenh -> motor quay tron 1000 step roi tu dung.
+ * Khong nhan duoc lenh moi khi dang quay (de pulse khong bi gian doan).
  */
 
-const int PIN_U1 = 2;   // -> Driver 1 CW-   (motor 1 thuan)
-const int PIN_U2 = 3;   // -> Driver 1 CCW-  (motor 1 nguoc)
-const int PIN_U3 = 4;   // -> Driver 2 CW-   (motor 2 thuan)
-const int PIN_U4 = 5;   // -> Driver 2 CCW-  (motor 2 nguoc)
+#define PIN_M1_CW  2
+#define PIN_M1_CCW 3
+#define PIN_M2_CW  4
+#define PIN_M2_CCW 5
 
-const float STEP_DEG = 0.72;
-
-// THAM SO TANG TOC (lay tu code anh chay duoc)
-const int START_DELAY = 5000;   // bat dau cuc cham (100 step/s = 1/(5000us*2))
-const int RAMP_STEP   = 50;     // moi step giam delay 50us (cang nho cang muot)
-
-int activePin = -1;
-int activeChannel = 0;
-int targetDelay = 2500;         // mac dinh 200 step/s
-int currentDelay = START_DELAY; // hien tai (se ramp xuong target)
-
-unsigned long stepCount = 0;
-unsigned long lastPrint = 0;
-unsigned long startTime = 0;
+const int START_DELAY = 5000;   // bat dau cuc cham (~100 step/s)
+const int MIN_DELAY   = 1500;   // toc do toi da (~333 step/s)
+const int RAMP_STEP   = 50;     // do muot
+const int RUN_STEPS   = 1000;   // so step chay deu (1000 * 0.72 = 720 deg = 2 vong)
 
 
-void setAllLow() {
-  digitalWrite(PIN_U1, LOW);
-  digitalWrite(PIN_U2, LOW);
-  digitalWrite(PIN_U3, LOW);
-  digitalWrite(PIN_U4, LOW);
+void pulse(int pin, int d) {
+  digitalWrite(pin, HIGH);
+  delayMicroseconds(d);
+  digitalWrite(pin, LOW);
+  delayMicroseconds(d);
 }
 
 
-void selectChannel(int n) {
-  setAllLow();
-  switch (n) {
-    case 1: activePin = PIN_U1; break;
-    case 2: activePin = PIN_U2; break;
-    case 3: activePin = PIN_U3; break;
-    case 4: activePin = PIN_U4; break;
-    default: activePin = -1; return;
+void run_smooth(int pin, int steps) {
+  // Tang toc
+  for (int d = START_DELAY; d > MIN_DELAY; d -= RAMP_STEP) {
+    pulse(pin, d);
   }
-  activeChannel = n;
-  stepCount = 0;
-  startTime = millis();
-  lastPrint = startTime;
-  currentDelay = START_DELAY;  // bat dau cham, ramp len target
-
-  Serial.print(F(">>> KENH "));
-  Serial.print(n);
-  Serial.print(F(" - Pin "));
-  Serial.print(activePin);
-  Serial.print(F(" - target "));
-  Serial.print(500000L / targetDelay);
-  Serial.println(F(" step/s (tang toc tu 100 step/s)"));
-}
-
-
-void setSpeed(int sps, const char* label) {
-  targetDelay = 500000L / sps;
-  Serial.print(F(">>> Toc do target moi: "));
-  Serial.print(sps);
-  Serial.print(F(" step/s ("));
-  Serial.print(label);
-  Serial.println(F(")"));
+  // Chay deu
+  for (int i = 0; i < steps; i++) {
+    pulse(pin, MIN_DELAY);
+  }
+  // Giam toc
+  for (int d = MIN_DELAY; d < START_DELAY; d += RAMP_STEP) {
+    pulse(pin, d);
+  }
 }
 
 
 void setup() {
   Serial.begin(9600);
 
-  pinMode(PIN_U1, OUTPUT);
-  pinMode(PIN_U2, OUTPUT);
-  pinMode(PIN_U3, OUTPUT);
-  pinMode(PIN_U4, OUTPUT);
-  setAllLow();
+  pinMode(PIN_M1_CW,  OUTPUT); digitalWrite(PIN_M1_CW,  LOW);
+  pinMode(PIN_M1_CCW, OUTPUT); digitalWrite(PIN_M1_CCW, LOW);
+  pinMode(PIN_M2_CW,  OUTPUT); digitalWrite(PIN_M2_CW,  LOW);
+  pinMode(PIN_M2_CCW, OUTPUT); digitalWrite(PIN_M2_CCW, LOW);
 
   delay(100);
-
   Serial.println();
-  Serial.println(F("==============================================="));
-  Serial.println(F("  MOTOR TEST v2 - Direct Arduino -> Driver"));
-  Serial.println(F("  (logic ACTIVE HIGH + co TANG TOC tu tu)"));
-  Serial.println(F("==============================================="));
-  Serial.println(F("  D2 -> Driver 1 CW-  (motor 1 thuan)"));
-  Serial.println(F("  D3 -> Driver 1 CCW- (motor 1 nguoc)"));
-  Serial.println(F("  D4 -> Driver 2 CW-  (motor 2 thuan)"));
-  Serial.println(F("  D5 -> Driver 2 CCW- (motor 2 nguoc)"));
-  Serial.println();
-  Serial.println(F("LENH (go vao Serial):"));
-  Serial.println(F("  1/2/3/4 -> chon kenh"));
-  Serial.println(F("  s       -> stop"));
-  Serial.println(F("  v=50  l=100  m=200  f=333  x=500 step/s"));
-  Serial.println(F("==============================================="));
-  Serial.println(F("San sang. Go 1, 2, 3, hoac 4 de bat dau..."));
+  Serial.println(F("=== MOTOR TEST (simple) ==="));
+  Serial.println(F("Go: 1=M1-thuan, 2=M1-nguoc, 3=M2-thuan, 4=M2-nguoc"));
+  Serial.print(F("Moi lenh quay "));
+  Serial.print(RUN_STEPS);
+  Serial.println(F(" step (~720 deg) roi tu dung."));
   Serial.println();
 }
 
 
 void loop() {
-  // Doc Serial input
   if (Serial.available()) {
     char c = Serial.read();
+    int pin = -1;
+    const char* name = "";
     switch (c) {
-      case '1': selectChannel(1); break;
-      case '2': selectChannel(2); break;
-      case '3': selectChannel(3); break;
-      case '4': selectChannel(4); break;
-      case 's':
-      case 'S':
-        activePin = -1;
-        setAllLow();
-        Serial.println(F(">>> STOP"));
-        break;
-      case 'v': case 'V': setSpeed(50,  "RAT CHAM"); break;
-      case 'l': case 'L': setSpeed(100, "CHAM"); break;
-      case 'm': case 'M': setSpeed(200, "VUA"); break;
-      case 'f': case 'F': setSpeed(333, "NHANH"); break;
-      case 'x': case 'X': setSpeed(500, "RAT NHANH"); break;
-      default: break;
-    }
-  }
-
-  // Phat xung (giong code anh da chay duoc: HIGH -> LOW)
-  if (activePin >= 0) {
-    digitalWrite(activePin, HIGH);
-    delayMicroseconds(currentDelay);
-    digitalWrite(activePin, LOW);
-    delayMicroseconds(currentDelay);
-    stepCount++;
-
-    // TANG TOC: giam currentDelay tu tu cho den khi bang targetDelay
-    if (currentDelay > targetDelay) {
-      currentDelay -= RAMP_STEP;
-      if (currentDelay < targetDelay) currentDelay = targetDelay;
+      case '1': pin = PIN_M1_CW;  name = "M1 thuan (D2)"; break;
+      case '2': pin = PIN_M1_CCW; name = "M1 nguoc (D3)"; break;
+      case '3': pin = PIN_M2_CW;  name = "M2 thuan (D4)"; break;
+      case '4': pin = PIN_M2_CCW; name = "M2 nguoc (D5)"; break;
+      default: return;  // bo qua \n, \r, ky tu khac
     }
 
-    // In trang thai moi 500ms
-    unsigned long now = millis();
-    if (now - lastPrint >= 500) {
-      float deg = stepCount * STEP_DEG;
-      float secs = (now - startTime) / 1000.0;
-      int sps = 500000L / currentDelay;
-      Serial.print(F("  KENH "));
-      Serial.print(activeChannel);
-      Serial.print(F("  step="));
-      Serial.print(stepCount);
-      Serial.print(F("  goc="));
-      Serial.print(deg, 1);
-      Serial.print(F("deg ("));
-      Serial.print(deg / 360.0, 2);
-      Serial.print(F(" vong)  toc do hien tai="));
-      Serial.print(sps);
-      Serial.print(F(" step/s  thoi gian="));
-      Serial.print(secs, 1);
-      Serial.println(F("s"));
-      lastPrint = now;
-    }
+    Serial.print(F(">>> Quay "));
+    Serial.print(name);
+    Serial.print(F(" - "));
+    Serial.print(RUN_STEPS);
+    Serial.println(F(" step..."));
+
+    run_smooth(pin, RUN_STEPS);
+
+    Serial.println(F(">>> XONG. Go lenh tiep."));
   }
 }

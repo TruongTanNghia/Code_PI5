@@ -1,34 +1,20 @@
 """
-Dieu khien Arduino quay motor tu Pi5 qua UART (GPIO14/15) hoac USB.
+Dieu khien Arduino quay motor tu Pi5 qua UART hoac USB.
 
-YEU CAU:
-- Arduino da upload arduino/motor_test/motor_test.ino
-- Cam day theo 1 trong 2 cach:
-    A) UART (mac dinh, anh dang dung):
-       Pi GPIO14 (TX, chan 8)  -> Arduino RX (D0)
-       Arduino TX (D1) -[1K]-+- Pi GPIO15 (RX, chan 10)
-                             |
-                            [2K]
-                             |
-                            GND
-       Pi GND (chan 6)        -> Arduino GND
-       (Voltage divider 1K/2K de ha 5V Arduino xuong 3.3V cho Pi)
-
-    B) USB: cap USB Arduino vao Pi
+Yeu cau:
+- Arduino da upload arduino/motor_test/motor_test.ino (simple version)
 - Cai pyserial: pip install pyserial
-- Da bat UART trong raspi-config (chi cho mode A)
 
-CACH DUNG:
-    python arduino_motor.py 1            # quay kenh U1, toc do vua
-    python arduino_motor.py 2 f          # kenh U2, NHANH (1000 step/s)
-    python arduino_motor.py 3 l          # kenh U3, CHAM (50 step/s)
-    python arduino_motor.py 4 v          # kenh U4, RAT CHAM (5 step/s)
-    python arduino_motor.py stop         # dung motor
+Cach dung:
+    python arduino_motor.py 1            # M1 thuan, 1000 step (~720 deg / 2 vong)
+    python arduino_motor.py 2            # M1 nguoc
+    python arduino_motor.py 3            # M2 thuan
+    python arduino_motor.py 4            # M2 nguoc
     python arduino_motor.py monitor      # chi xem output Arduino
 
-    python arduino_motor.py 1 m --port /dev/ttyACM0   # ep buoc dung USB
+    python arduino_motor.py 1 --port /dev/ttyUSB0     # ep buoc port USB
 
-Ctrl+C de dung va thoat.
+Moi lenh quay 1000 step (~2 vong) roi tu dung.
 """
 import sys
 import time
@@ -43,10 +29,6 @@ except ImportError:
     sys.exit(1)
 
 
-# Thu tu uu tien tim port:
-# 1. /dev/serial0 (UART chuan tren Pi - GPIO14/15)
-# 2. /dev/ttyAMA* (UART truc tiep)
-# 3. /dev/ttyACM*, /dev/ttyUSB* (USB)
 def find_serial_port():
     if os.path.exists("/dev/serial0"):
         return "/dev/serial0"
@@ -58,22 +40,12 @@ def find_serial_port():
     return candidates[0] if candidates else None
 
 
-def drain(ser, label="ARDUINO"):
-    """Doc het du lieu hien co tu serial va in ra."""
-    while ser.in_waiting:
-        line = ser.readline().decode(errors="ignore").rstrip()
-        if line:
-            print(f"  [{label}] {line}")
-
-
 def main():
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("cmd", nargs="?", default=None,
-                        help="1/2/3/4 = kenh, stop = dung, monitor = xem output")
-    parser.add_argument("speed", nargs="?", default="m",
-                        help="v=rat cham, l=cham, m=vua, f=nhanh")
+                        help="1/2/3/4 = kenh, monitor = xem output")
     parser.add_argument("--port", default=None,
-                        help="Override port (vd: /dev/ttyACM0)")
+                        help="Override port (vd: /dev/ttyUSB0)")
     parser.add_argument("--baud", type=int, default=9600)
     parser.add_argument("-h", "--help", action="store_true")
     args = parser.parse_args()
@@ -84,43 +56,24 @@ def main():
 
     port = args.port or find_serial_port()
     if not port:
-        print("[!] Khong tim thay serial port (UART hoac USB).")
-        print("    Bat UART: sudo raspi-config -> Interface -> Serial -> enable hardware")
-        print("    Hoac cam Arduino qua USB.")
+        print("[!] Khong tim thay serial port.")
         sys.exit(1)
 
     print(f"[INFO] Mo port: {port} @ {args.baud}")
     try:
         ser = serial.Serial(port, args.baud, timeout=0.5)
     except serial.SerialException as e:
-        print(f"[!] Khong mo duoc port {port}: {e}")
-        if "/dev/serial0" in port or "ttyAMA" in port:
-            print("    UART chua bat? Chay: sudo raspi-config")
-            print("    -> Interface Options -> Serial Port")
-            print("    -> Login shell: NO, Hardware: YES, Reboot")
+        print(f"[!] Khong mo duoc port: {e}")
         sys.exit(1)
 
-    # Cho Arduino reset (chi xay ra khi mo USB serial; UART thi khong reset)
-    time.sleep(2.0)
-    drain(ser)
+    time.sleep(2.0)  # cho Arduino reset
 
     cmd = args.cmd.lower()
-
     valid_channels = {"1", "2", "3", "4"}
-    valid_speeds = {"v", "l", "m", "f"}
 
-    # === STOP ===
-    if cmd in ("stop", "s"):
-        ser.write(b's')
-        print("[INFO] Da gui lenh STOP.")
-        time.sleep(0.5)
-        drain(ser)
-        ser.close()
-        return
-
-    # === MONITOR ===
+    # MONITOR mode
     if cmd == "monitor":
-        print("[INFO] Mode monitor - chi xem output Arduino. Ctrl+C de thoat.")
+        print("[INFO] Mode monitor - Ctrl+C de thoat.")
         try:
             while True:
                 line = ser.readline().decode(errors="ignore").rstrip()
@@ -132,38 +85,36 @@ def main():
             ser.close()
         return
 
-    # === SPIN CHANNEL ===
+    # SPIN
     if cmd not in valid_channels:
-        print(f"[!] Tham so sai: '{cmd}'. Dung: 1/2/3/4, stop, monitor")
+        print(f"[!] Tham so sai: '{cmd}'. Dung: 1/2/3/4, monitor")
         ser.close()
         sys.exit(1)
 
-    if args.speed not in valid_speeds:
-        print(f"[!] Toc do sai: '{args.speed}'. Dung: v / l / m / f")
-        ser.close()
-        sys.exit(1)
+    # Doc banner Arduino
+    while ser.in_waiting:
+        line = ser.readline().decode(errors="ignore").rstrip()
+        if line:
+            print(f"  [ARDUINO] {line}")
 
-    print(f"[INFO] Set toc do: '{args.speed}'")
-    ser.write(args.speed.encode())
-    time.sleep(0.2)
-    drain(ser)
-
-    print(f"[INFO] Quay kenh {cmd}...")
+    # Gui lenh
+    print(f"[INFO] Gui lenh '{cmd}' -> Arduino quay 1000 step...")
     ser.write(cmd.encode())
-    time.sleep(0.2)
 
-    print("[INFO] Motor dang quay. Ctrl+C de DUNG.")
+    # Cho Arduino chay xong (~10-15 giay)
+    print("[INFO] Doi motor quay xong (Ctrl+C de thoat sa hon)...")
     print()
     try:
-        while True:
+        # Doc output Arduino cho den khi thay "XONG" hoac timeout
+        timeout_at = time.time() + 30  # toi da 30s
+        while time.time() < timeout_at:
             line = ser.readline().decode(errors="ignore").rstrip()
             if line:
                 print(f"  [ARDUINO] {line}")
+                if "XONG" in line:
+                    break
     except KeyboardInterrupt:
-        print("\n[INFO] Gui lenh STOP...")
-        ser.write(b's')
-        time.sleep(0.5)
-        drain(ser)
+        print("\n[INFO] Thoat.")
     finally:
         ser.close()
         print("[INFO] Da dong ket noi.")
