@@ -1,29 +1,31 @@
 /*
- * motor_test.ino - V8 (DIAGNOSTIC: OLD code + Serial.begin only)
+ * motor_test.ino - V9 (V8 base + Serial trigger, NO println anywhere)
  *
- * Y CHANG code goc cua anh, chi them 1 dong Serial.begin(9600).
- * KHONG co Serial.read, KHONG co print, KHONG xu ly lenh.
- * Auto-run forever giong code goc.
+ * V8 da test work khi co Serial.begin nhung KHONG co print.
+ * V7 fail vi co Serial.println trong setup (lam roi pulse dau tien).
  *
- * MUC DICH: kiem tra xem chi viec enable Serial co lam motor twitch khong.
+ * V9: V8 base, them Serial.read() de chon channel, KHONG print gi ca.
+ *     Spin 5000 step (~15 giay) moi lenh roi tu dung.
  *
- * Sau khi upload, motor PHAI quay nhu code goc:
- *   - Quay thuan 800 step (~2.4 giay)
- *   - Cho 2 giay
- *   - Quay nguoc 800 step
- *   - Cho 3 giay
- *   - Lap lai
+ * SO DO DAU NOI: D2/D3/D4/D5 -> CW-/CCW- driver, 5V -> CW+/CCW+, GND -> GND
  *
- * Neu motor van twitch -> Serial.begin co tac dong -> can fix.
- * Neu motor quay binh thuong -> Serial.begin OK, van de o cho khac.
+ * LENH (Pi5 gui qua USB):
+ *   1 -> M1 thuan, 2 -> M1 nguoc, 3 -> M2 thuan, 4 -> M2 nguoc
+ *   Moi lenh quay 5000 step (~15 giay) roi tu dung.
+ *
+ * TUYET DOI KHONG dung Serial.print/println O DAU CA - de pulse sach.
  */
 
-#define CW 2
-#define CCW 3
+#define M1_CW  2
+#define M1_CCW 3
+#define M2_CW  4
+#define M2_CCW 5
 
 int start_delay = 5000;
 int min_delay = 1500;
 int step_change = 50;
+
+const int RUN_STEPS = 5000;   // ~15 giay quay tai 333 step/s
 
 
 void pulse(int pin, int d) {
@@ -48,19 +50,37 @@ void run_smooth(int pin, int steps) {
 
 
 void setup() {
-  Serial.begin(9600);   // <-- DONG DUY NHAT KHAC code goc
+  Serial.begin(9600);
 
-  pinMode(CW, OUTPUT);
-  pinMode(CCW, OUTPUT);
-  digitalWrite(CW, LOW);
-  digitalWrite(CCW, LOW);
+  pinMode(M1_CW,  OUTPUT);
+  pinMode(M1_CCW, OUTPUT);
+  pinMode(M2_CW,  OUTPUT);
+  pinMode(M2_CCW, OUTPUT);
+
+  digitalWrite(M1_CW,  LOW);
+  digitalWrite(M1_CCW, LOW);
+  digitalWrite(M2_CW,  LOW);
+  digitalWrite(M2_CCW, LOW);
+
+  // KHONG Serial.println - bat ky print nao trong setup deu disturb pulse dau
 }
 
 
 void loop() {
-  run_smooth(CW, 800);
-  delay(2000);
+  if (Serial.available()) {
+    char c = Serial.read();
+    int pin = -1;
 
-  run_smooth(CCW, 800);
-  delay(3000);
+    if (c == '1') pin = M1_CW;
+    else if (c == '2') pin = M1_CCW;
+    else if (c == '3') pin = M2_CW;
+    else if (c == '4') pin = M2_CCW;
+    else return;
+
+    // Drain bytes thua trong RX buffer (vd '\n' neu Pi gui kem)
+    while (Serial.available()) Serial.read();
+
+    run_smooth(pin, RUN_STEPS);
+    digitalWrite(pin, LOW);
+  }
 }
