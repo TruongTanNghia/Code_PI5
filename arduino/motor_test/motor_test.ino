@@ -1,11 +1,11 @@
 /*
- * motor_test.ino - V4 (clean first pulse via Serial.flush)
+ * motor_test.ino - V5 (noInterrupts during accel/decel)
  *
- * V3 in print xuong Serial truoc khi run_smooth -> TX interrupt firing
- * khi motor bat dau xung dau tien -> motor 5-phase mat sync -> twitch.
+ * Loi V4: Serial.begin enabled UART interrupt -> jitter cho xung dau tien
+ *         -> motor 5-phase mat sync -> twitch.
  *
- * V4 fix: Serial.flush() truoc run_smooth de cho TX buffer rong han
- *         truoc khi bat dau phat xung -> xung dau tien CHE
+ * V5 fix: noInterrupts() trong pha TANG TOC va GIAM TOC.
+ *         Pha chay deu cho phep interrupts de nhan duoc lenh 's' STOP.
  *
  * SO DO DAU NOI: D2/D3/D4/D5 -> CW-/CCW- driver, 5V -> CW+/CCW+, GND -> GND
  *
@@ -32,37 +32,38 @@ void pulse(int pin, int d) {
 }
 
 
-bool stopRequested() {
-  if (Serial.available()) {
-    char c = Serial.peek();
-    if (c == 's' || c == 'S') {
-      Serial.read();
-      return true;
-    }
-  }
-  return false;
-}
-
-
 void run_smooth(int pin, long steps) {
-  // === TANG TOC ===
+  // === PHA 1: TANG TOC - CRITICAL, KHOA INTERRUPT ===
+  // Khoa interrupt de timing xung CHE
+  // Motor 5-phase can xung dau tien khong bi disturb de lock sync
+  noInterrupts();
   for (int d = start_delay; d > min_delay; d -= step_change) {
     pulse(pin, d);
   }
+  interrupts();
 
-  // === CHAY DEU (check serial moi 128 step) ===
+  // === PHA 2: CHAY DEU - cho phep interrupt de nhan 's' ===
   for (long i = 0; i < steps; i++) {
     pulse(pin, min_delay);
 
+    // Check 's' moi 128 step
     if ((i & 0x7F) == 0) {
-      if (stopRequested()) break;
+      if (Serial.available()) {
+        char c = Serial.peek();
+        if (c == 's' || c == 'S') {
+          Serial.read();
+          break;
+        }
+      }
     }
   }
 
-  // === GIAM TOC ===
+  // === PHA 3: GIAM TOC - critical lai ===
+  noInterrupts();
   for (int d = min_delay; d < start_delay; d += step_change) {
     pulse(pin, d);
   }
+  interrupts();
 }
 
 
@@ -85,9 +86,9 @@ void setup() {
 
   delay(100);
   Serial.println();
-  Serial.println(F("=== MOTOR v4 (clean first pulse) ==="));
+  Serial.println(F("=== MOTOR v5 (noInterrupts accel/decel) ==="));
   Serial.println(F("1=M1+ 2=M1- 3=M2+ 4=M2- s=STOP"));
-  Serial.flush();   // dam bao banner gui xong truoc khi nhan lenh
+  Serial.flush();
 }
 
 
@@ -98,21 +99,18 @@ void loop() {
     const char* name = "";
 
     switch (c) {
-      case '1': pin = PIN_M1_CW;  name = "M1 thuan (D2)"; break;
-      case '2': pin = PIN_M1_CCW; name = "M1 nguoc (D3)"; break;
-      case '3': pin = PIN_M2_CW;  name = "M2 thuan (D4)"; break;
-      case '4': pin = PIN_M2_CCW; name = "M2 nguoc (D5)"; break;
+      case '1': pin = PIN_M1_CW;  name = "M1 thuan"; break;
+      case '2': pin = PIN_M1_CCW; name = "M1 nguoc"; break;
+      case '3': pin = PIN_M2_CW;  name = "M2 thuan"; break;
+      case '4': pin = PIN_M2_CCW; name = "M2 nguoc"; break;
       default: return;
     }
 
     if (pin < 0) return;
 
-    // QUAN TRONG: in roi flush truoc khi spin motor
-    // Neu khong flush, byte van dang gui qua TX interrupt
-    // -> jitter pulse dau tien -> motor 5-phase mat sync
     Serial.print(F(">>> SPIN "));
     Serial.println(name);
-    Serial.flush();   // CHO TX BUFFER RONG HAN
+    Serial.flush();   // dam bao TX hoan toan rong truoc khi vao run_smooth
 
     run_smooth(pin, MAX_STEPS);
     setAllLow();
