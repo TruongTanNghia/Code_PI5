@@ -1,11 +1,13 @@
 /*
- * motor_test.ino - V5 (noInterrupts during accel/decel)
+ * motor_test.ino - V6 (FULL noInterrupts during run_smooth + direct UART poll)
  *
- * Loi V4: Serial.begin enabled UART interrupt -> jitter cho xung dau tien
- *         -> motor 5-phase mat sync -> twitch.
+ * V5 chi tat interrupt o pha tang/giam toc, pha chay deu van bi interrupt fire
+ * (Timer0 millis tick moi 1ms). Motor 5-phase van mat sync.
  *
- * V5 fix: noInterrupts() trong pha TANG TOC va GIAM TOC.
- *         Pha chay deu cho phep interrupts de nhan duoc lenh 's' STOP.
+ * V6 fix manh hon: noInterrupts() suot tron qua trinh run_smooth.
+ *  -> Khong co Timer0, khong co UART interrupt
+ *  -> Pulse timing CHE 100%
+ * Vao 's' bang cach poll thang UART hardware register (UCSR0A & RXC0).
  *
  * SO DO DAU NOI: D2/D3/D4/D5 -> CW-/CCW- driver, 5V -> CW+/CCW+, GND -> GND
  *
@@ -32,37 +34,43 @@ void pulse(int pin, int d) {
 }
 
 
+// Doc UART tu hardware register, KHONG qua interrupt
+inline bool uartByteAvailable() {
+  return UCSR0A & (1 << RXC0);
+}
+
+inline char uartReadByte() {
+  return UDR0;
+}
+
+
 void run_smooth(int pin, long steps) {
-  // === PHA 1: TANG TOC - CRITICAL, KHOA INTERRUPT ===
-  // Khoa interrupt de timing xung CHE
-  // Motor 5-phase can xung dau tien khong bi disturb de lock sync
+  // KHOA TAT CA INTERRUPT - pulse timing CHE
   noInterrupts();
+
+  // PHA TANG TOC
   for (int d = start_delay; d > min_delay; d -= step_change) {
     pulse(pin, d);
   }
-  interrupts();
 
-  // === PHA 2: CHAY DEU - cho phep interrupt de nhan 's' ===
+  // PHA CHAY DEU - poll UART truc tiep cho 's'
   for (long i = 0; i < steps; i++) {
     pulse(pin, min_delay);
 
-    // Check 's' moi 128 step
-    if ((i & 0x7F) == 0) {
-      if (Serial.available()) {
-        char c = Serial.peek();
-        if (c == 's' || c == 'S') {
-          Serial.read();
-          break;
-        }
+    if ((i & 0x7F) == 0) {     // moi 128 step
+      if (uartByteAvailable()) {
+        char c = uartReadByte();
+        if (c == 's' || c == 'S') break;
       }
     }
   }
 
-  // === PHA 3: GIAM TOC - critical lai ===
-  noInterrupts();
+  // PHA GIAM TOC
   for (int d = min_delay; d < start_delay; d += step_change) {
     pulse(pin, d);
   }
+
+  // MO LAI INTERRUPT
   interrupts();
 }
 
@@ -86,7 +94,7 @@ void setup() {
 
   delay(100);
   Serial.println();
-  Serial.println(F("=== MOTOR v5 (noInterrupts accel/decel) ==="));
+  Serial.println(F("=== MOTOR v6 (full noInterrupts) ==="));
   Serial.println(F("1=M1+ 2=M1- 3=M2+ 4=M2- s=STOP"));
   Serial.flush();
 }
@@ -110,7 +118,7 @@ void loop() {
 
     Serial.print(F(">>> SPIN "));
     Serial.println(name);
-    Serial.flush();   // dam bao TX hoan toan rong truoc khi vao run_smooth
+    Serial.flush();
 
     run_smooth(pin, MAX_STEPS);
     setAllLow();
