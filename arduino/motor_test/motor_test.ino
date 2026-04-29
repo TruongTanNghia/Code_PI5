@@ -20,23 +20,21 @@
  *     GND   ->  V-
  *     5 day mau (BLUE/RED/ORANGE/GREEN/BLACK) -> motor
  *
- * LOGIC TIN HIEU (QUAN TRONG - khac voi cach noi qua PC817):
- *   - Idle (khong xung): Arduino pin = HIGH (5V) -> CW- = 5V
- *     -> Khong co dong qua driver LED (CW+ va CW- cung 5V)
- *     -> Driver KHONG step
- *   - Active (xung): Arduino pin = LOW (0V) -> CW- = 0V
- *     -> Dong chay tu CW+ (5V) qua driver internal LED -> CW- (0V) -> GND
- *     -> Driver thay 1 xung -> Step 1 cai
- *
- * MOI BUOC = 1 chu ky LOW(active) -> HIGH(idle) -> LOW... -> 1 step = 0.72 deg
+ * LOGIC TIN HIEU (giong code anh da test thanh cong hom truoc):
+ *   - Pulse cycle: HIGH(d us) -> LOW(d us)
+ *   - Driver count step tren transition (HIGH->LOW)
+ *   - Idle state: LOW (khong phat xung)
+ *   - QUAN TRONG: phai TANG TOC TU TU tu cham -> nhanh
+ *     (5-phase stepper khong khoi dong duoc o toc do cao ngay tu dau)
  *
  * CACH DUNG (Serial Monitor, baud 9600):
- *   1/2/3/4 -> chon kenh (motor 1 thuan/nguoc, motor 2 thuan/nguoc)
+ *   1/2/3/4 -> chon kenh
  *   s       -> dung
- *   v       -> RAT CHAM (5 step/s)
- *   l       -> CHAM (50 step/s)
- *   m       -> VUA (200 step/s, default)
- *   f       -> NHANH (1000 step/s)
+ *   v       -> RAT CHAM (50 step/s, khong tang toc)
+ *   l       -> CHAM    (100 step/s)
+ *   m       -> VUA     (200 step/s) [default]
+ *   f       -> NHANH   (333 step/s)
+ *   x       -> RAT NHANH (500 step/s)
  */
 
 const int PIN_U1 = 2;   // -> Driver 1 CW-   (motor 1 thuan)
@@ -44,31 +42,32 @@ const int PIN_U2 = 3;   // -> Driver 1 CCW-  (motor 1 nguoc)
 const int PIN_U3 = 4;   // -> Driver 2 CW-   (motor 2 thuan)
 const int PIN_U4 = 5;   // -> Driver 2 CCW-  (motor 2 nguoc)
 
-const float STEP_DEG = 0.72;  // A16K-M569
+const float STEP_DEG = 0.72;
 
-// ACTIVE LOW: idle = HIGH, pulse active = LOW
-const int IDLE  = HIGH;
-const int PULSE = LOW;
+// THAM SO TANG TOC (lay tu code anh chay duoc)
+const int START_DELAY = 5000;   // bat dau cuc cham (100 step/s = 1/(5000us*2))
+const int RAMP_STEP   = 50;     // moi step giam delay 50us (cang nho cang muot)
 
 int activePin = -1;
 int activeChannel = 0;
-int delayUs = 2500;           // mac dinh 200 step/s
+int targetDelay = 2500;         // mac dinh 200 step/s
+int currentDelay = START_DELAY; // hien tai (se ramp xuong target)
 
 unsigned long stepCount = 0;
 unsigned long lastPrint = 0;
 unsigned long startTime = 0;
 
 
-void setAllIdle() {
-  digitalWrite(PIN_U1, IDLE);
-  digitalWrite(PIN_U2, IDLE);
-  digitalWrite(PIN_U3, IDLE);
-  digitalWrite(PIN_U4, IDLE);
+void setAllLow() {
+  digitalWrite(PIN_U1, LOW);
+  digitalWrite(PIN_U2, LOW);
+  digitalWrite(PIN_U3, LOW);
+  digitalWrite(PIN_U4, LOW);
 }
 
 
 void selectChannel(int n) {
-  setAllIdle();
+  setAllLow();
   switch (n) {
     case 1: activePin = PIN_U1; break;
     case 2: activePin = PIN_U2; break;
@@ -80,20 +79,21 @@ void selectChannel(int n) {
   stepCount = 0;
   startTime = millis();
   lastPrint = startTime;
+  currentDelay = START_DELAY;  // bat dau cham, ramp len target
 
   Serial.print(F(">>> KENH "));
   Serial.print(n);
-  Serial.print(F(" - GPIO Pin "));
+  Serial.print(F(" - Pin "));
   Serial.print(activePin);
-  Serial.print(F("  toc do: "));
-  Serial.print(500000L / delayUs);
-  Serial.println(F(" step/s"));
+  Serial.print(F(" - target "));
+  Serial.print(500000L / targetDelay);
+  Serial.println(F(" step/s (tang toc tu 100 step/s)"));
 }
 
 
 void setSpeed(int sps, const char* label) {
-  delayUs = 500000L / sps;
-  Serial.print(F(">>> Toc do moi: "));
+  targetDelay = 500000L / sps;
+  Serial.print(F(">>> Toc do target moi: "));
   Serial.print(sps);
   Serial.print(F(" step/s ("));
   Serial.print(label);
@@ -108,29 +108,24 @@ void setup() {
   pinMode(PIN_U2, OUTPUT);
   pinMode(PIN_U3, OUTPUT);
   pinMode(PIN_U4, OUTPUT);
-  setAllIdle();   // Quan trong: HIGH = no step
+  setAllLow();
 
   delay(100);
 
   Serial.println();
   Serial.println(F("==============================================="));
-  Serial.println(F("  MOTOR TEST - Direct Arduino -> Driver"));
-  Serial.println(F("  (KHONG qua PC817 - logic ACTIVE LOW)"));
+  Serial.println(F("  MOTOR TEST v2 - Direct Arduino -> Driver"));
+  Serial.println(F("  (logic ACTIVE HIGH + co TANG TOC tu tu)"));
   Serial.println(F("==============================================="));
   Serial.println(F("  D2 -> Driver 1 CW-  (motor 1 thuan)"));
   Serial.println(F("  D3 -> Driver 1 CCW- (motor 1 nguoc)"));
   Serial.println(F("  D4 -> Driver 2 CW-  (motor 2 thuan)"));
   Serial.println(F("  D5 -> Driver 2 CCW- (motor 2 nguoc)"));
-  Serial.println(F("  5V -> CW+ va CCW+ ca 2 driver"));
-  Serial.println(F("  GND -> GND ca 2 driver"));
   Serial.println();
-  Serial.println(F("LENH (go vao Serial Monitor):"));
+  Serial.println(F("LENH (go vao Serial):"));
   Serial.println(F("  1/2/3/4 -> chon kenh"));
   Serial.println(F("  s       -> stop"));
-  Serial.println(F("  v       -> rat cham (5 step/s)"));
-  Serial.println(F("  l       -> cham    (50 step/s)"));
-  Serial.println(F("  m       -> vua     (200 step/s) [default]"));
-  Serial.println(F("  f       -> nhanh   (1000 step/s)"));
+  Serial.println(F("  v=50  l=100  m=200  f=333  x=500 step/s"));
   Serial.println(F("==============================================="));
   Serial.println(F("San sang. Go 1, 2, 3, hoac 4 de bat dau..."));
   Serial.println();
@@ -149,31 +144,38 @@ void loop() {
       case 's':
       case 'S':
         activePin = -1;
-        setAllIdle();
+        setAllLow();
         Serial.println(F(">>> STOP"));
         break;
-      case 'v': case 'V': setSpeed(5, "RAT CHAM"); break;
-      case 'l': case 'L': setSpeed(50, "CHAM"); break;
+      case 'v': case 'V': setSpeed(50,  "RAT CHAM"); break;
+      case 'l': case 'L': setSpeed(100, "CHAM"); break;
       case 'm': case 'M': setSpeed(200, "VUA"); break;
-      case 'f': case 'F': setSpeed(1000, "NHANH"); break;
+      case 'f': case 'F': setSpeed(333, "NHANH"); break;
+      case 'x': case 'X': setSpeed(500, "RAT NHANH"); break;
       default: break;
     }
   }
 
-  // Phat xung neu dang co kenh active
-  // Logic: pulse active = LOW (keo CW- xuong GND -> dong qua driver LED)
-  //        idle         = HIGH (CW- = 5V, khong co dong)
+  // Phat xung (giong code anh da chay duoc: HIGH -> LOW)
   if (activePin >= 0) {
-    digitalWrite(activePin, PULSE);   // active = LOW
-    delayMicroseconds(delayUs);
-    digitalWrite(activePin, IDLE);    // idle = HIGH
-    delayMicroseconds(delayUs);
+    digitalWrite(activePin, HIGH);
+    delayMicroseconds(currentDelay);
+    digitalWrite(activePin, LOW);
+    delayMicroseconds(currentDelay);
     stepCount++;
 
+    // TANG TOC: giam currentDelay tu tu cho den khi bang targetDelay
+    if (currentDelay > targetDelay) {
+      currentDelay -= RAMP_STEP;
+      if (currentDelay < targetDelay) currentDelay = targetDelay;
+    }
+
+    // In trang thai moi 500ms
     unsigned long now = millis();
     if (now - lastPrint >= 500) {
       float deg = stepCount * STEP_DEG;
       float secs = (now - startTime) / 1000.0;
+      int sps = 500000L / currentDelay;
       Serial.print(F("  KENH "));
       Serial.print(activeChannel);
       Serial.print(F("  step="));
@@ -182,7 +184,9 @@ void loop() {
       Serial.print(deg, 1);
       Serial.print(F("deg ("));
       Serial.print(deg / 360.0, 2);
-      Serial.print(F(" vong)  thoi gian="));
+      Serial.print(F(" vong)  toc do hien tai="));
+      Serial.print(sps);
+      Serial.print(F(" step/s  thoi gian="));
       Serial.print(secs, 1);
       Serial.println(F("s"));
       lastPrint = now;
