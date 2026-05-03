@@ -1,76 +1,129 @@
-/*
- * motor_test.ino - V10 (V9 simpler + protect motor from DTR reset)
- *
- * V8 auto-run hoat dong. V9 fail khi tu Pi5 trigger qua USB.
- * Nghi van: Pi5 mo serial port -> DTR toggle -> Arduino reset
- *           -> ngat run_smooth giua chung -> motor twitch.
- *
- * V10: trigger don gian, KHONG print gi ca, SPIN dai 5000 step.
- *      Ket hop voi motor_no_dtr.py (Python tat DTR) -> Pi5 mo port
- *      ma KHONG reset Arduino.
- *
- * SO DO DAU NOI: D2/D3/D4/D5 -> CW-/CCW- driver, 5V -> CW+/CCW+, GND -> GND
- *
- * LENH (Pi5 gui): 1=M1+ 2=M1- 3=M2+ 4=M2-
- */
-
 #define M1_CW  2
 #define M1_CCW 3
 #define M2_CW  4
 #define M2_CCW 5
 
+int speedLevel = 2;
+int pulseDelay = 3000;
 
-void pulse(int pin, int d) {
-  digitalWrite(pin, HIGH);
-  delayMicroseconds(d);
-  digitalWrite(pin, LOW);
-  delayMicroseconds(d);
-}
+bool m1Running = false;
+bool m2Running = false;
+int m1Pin = -1;
+int m2Pin = -1;
 
-
-void run_smooth(int pin, int steps) {
-  // Tang toc
-  for (int d = 5000; d > 1500; d -= 50) {
-    pulse(pin, d);
-  }
-  // Chay deu
-  for (int i = 0; i < steps; i++) {
-    pulse(pin, 1500);
-  }
-  // Giam toc
-  for (int d = 1500; d < 5000; d += 50) {
-    pulse(pin, d);
-  }
-}
-
+unsigned long lastM1 = 0;
+unsigned long lastM2 = 0;
+bool m1State = LOW;
+bool m2State = LOW;
 
 void setup() {
   Serial.begin(9600);
-  pinMode(M1_CW,  OUTPUT);
+
+  pinMode(M1_CW, OUTPUT);
   pinMode(M1_CCW, OUTPUT);
-  pinMode(M2_CW,  OUTPUT);
+  pinMode(M2_CW, OUTPUT);
   pinMode(M2_CCW, OUTPUT);
-  digitalWrite(M1_CW,  LOW);
-  digitalWrite(M1_CCW, LOW);
-  digitalWrite(M2_CW,  LOW);
-  digitalWrite(M2_CCW, LOW);
+
+  stopM1();
+  stopM2();
 }
 
-
 void loop() {
-  if (Serial.available()) {
+  readSerial();
+  runMotor1();
+  runMotor2();
+}
+
+void readSerial() {
+  while (Serial.available()) {
     char c = Serial.read();
-    int pin = -1;
 
-    if (c == '1') pin = M1_CW;
-    else if (c == '2') pin = M1_CCW;
-    else if (c == '3') pin = M2_CW;
-    else if (c == '4') pin = M2_CCW;
-    else return;
+    // speed 0-9
+    if (c >= '0' && c <= '9') {
+      speedLevel = c - '0';
 
-    while (Serial.available()) Serial.read();
+      // speed thấp = chậm hơn
+      // 0 rất chậm, 9 nhanh
+      pulseDelay = map(speedLevel, 0, 9, 8000, 800);
+    }
 
-    run_smooth(pin, 5000);
-    digitalWrite(pin, LOW);
+    else if (c == 'F') {      // M1 phải
+      startM1(M1_CW);
+    }
+
+    else if (c == 'B') {      // M1 trái
+      startM1(M1_CCW);
+    }
+
+    else if (c == 'U') {      // M2 lên
+      startM2(M2_CW);
+    }
+
+    else if (c == 'D') {      // M2 xuống
+      startM2(M2_CCW);
+    }
+
+    else if (c == 'X') {      // stop M1
+      stopM1();
+    }
+
+    else if (c == 'Y') {      // stop M2
+      stopM2();
+    }
+
+    else if (c == 'S') {      // stop all
+      stopM1();
+      stopM2();
+    }
+  }
+}
+
+void startM1(int pin) {
+  stopM1();
+  m1Pin = pin;
+  m1Running = true;
+}
+
+void startM2(int pin) {
+  stopM2();
+  m2Pin = pin;
+  m2Running = true;
+}
+
+void stopM1() {
+  digitalWrite(M1_CW, LOW);
+  digitalWrite(M1_CCW, LOW);
+  m1Running = false;
+  m1Pin = -1;
+  m1State = LOW;
+}
+
+void stopM2() {
+  digitalWrite(M2_CW, LOW);
+  digitalWrite(M2_CCW, LOW);
+  m2Running = false;
+  m2Pin = -1;
+  m2State = LOW;
+}
+
+void runMotor1() {
+  if (!m1Running || m1Pin < 0) return;
+
+  unsigned long now = micros();
+  if (now - lastM1 >= pulseDelay) {
+    lastM1 = now;
+    m1State = !m1State;
+    digitalWrite(m1Pin, m1State);
+  }
+}
+
+void runMotor2() {
+  if (!m2Running || m2Pin < 0) return;
+
+  unsigned long now = micros();
+  if (now - lastM2 >= pulseDelay) {
+    lastM2 = now;
+    m2State = !m2State;
+    digitalWrite(m2Pin, m2State);
   }
 }
