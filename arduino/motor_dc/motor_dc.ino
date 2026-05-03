@@ -1,32 +1,35 @@
 /*
- * motor_dc.ino - DC motor qua H-bridge (L298N hoac tuong tu)
- *
- * Day la code anh da nap va test work tren Arduino Uno.
- * Luu o day de tham khao.
+ * motor_dc.ino - DC motor qua H-bridge (L298N) + dieu chinh toc do tu Pi5
  *
  * SO DO DAU NOI:
- *   Arduino                 H-bridge (L298N)
- *   ----------------------------------------
- *   D5 (PWM)  ENA -> ENA       (chinh toc do)
- *   D6        IN1 -> IN1       (chieu quay 1)
- *   D7        IN2 -> IN2       (chieu quay 2)
- *   GND           -> GND
+ *   Arduino   H-bridge (L298N)
+ *   ------------------------------
+ *   D5 (PWM)  ENA   (chinh toc do)
+ *   D6        IN1   (chieu 1)
+ *   D7        IN2   (chieu 2)
+ *   GND       GND
  *
- *   H-bridge   Motor + Nguon
+ *   H-bridge      Motor + Nguon
  *   ----------------------------
- *   OUT1, OUT2  -> 2 day cua DC motor
- *   12V         -> Nguon DC 12V
+ *   OUT1, OUT2 -> 2 day cua DC motor
+ *   12V         -> Nguon DC
  *   GND         -> GND nguon
  *
  * LENH (Serial 9600):
- *   F -> quay thuan (200/255 PWM)
- *   B -> quay nguoc
- *   S -> dung
+ *   F   -> quay thuan (toc do hien tai)
+ *   B   -> quay nguoc
+ *   S   -> dung
+ *   0-9 -> set toc do (0=dung, 1=cham nhat, 9=nhanh nhat)
+ *          Vi du gui '3' -> PWM = 3*25 = 75
+ *
+ * MAC DINH toc do = 100 PWM (~40% - cham vua phai).
  */
 
 #define ENA 5
 #define IN1 6
 #define IN2 7
+
+int currentSpeed = 100;   // mac dinh PWM = 100 (cham vua)
 
 
 void setup() {
@@ -44,18 +47,26 @@ void loop() {
   if (Serial.available()) {
     char cmd = Serial.read();
 
-    if (cmd == 'F') {        // quay thuan
+    if (cmd == 'F') {
       digitalWrite(IN1, HIGH);
       digitalWrite(IN2, LOW);
-      analogWrite(ENA, 200);
+      analogWrite(ENA, currentSpeed);
     }
-    else if (cmd == 'B') {   // quay nguoc
+    else if (cmd == 'B') {
       digitalWrite(IN1, LOW);
       digitalWrite(IN2, HIGH);
-      analogWrite(ENA, 200);
+      analogWrite(ENA, currentSpeed);
     }
-    else if (cmd == 'S') {   // dung
+    else if (cmd == 'S') {
       stopMotor();
+    }
+    else if (cmd >= '0' && cmd <= '9') {
+      // Set toc do: 0=stop, 1=25 PWM, ..., 9=225 PWM
+      currentSpeed = (cmd - '0') * 25;
+      // Cap nhat ngay neu motor dang chay
+      if (digitalRead(IN1) == HIGH || digitalRead(IN2) == HIGH) {
+        analogWrite(ENA, currentSpeed);
+      }
     }
   }
 }

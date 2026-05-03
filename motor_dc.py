@@ -84,6 +84,8 @@ def main():
                         help="Toi da quay X giay (0 = khong gioi han)")
     parser.add_argument("--debounce", type=int, default=3,
                         help="So lan doc lien tiep (default 3)")
+    parser.add_argument("--speed", type=int, default=4, choices=range(0, 10),
+                        help="Toc do 0-9 (0=stop, 1=cham nhat, 9=nhanh nhat). Default 4 (PWM 100)")
     parser.add_argument("--quiet", action="store_true",
                         help="Tat log trang thai lien tuc")
     parser.add_argument("--log-interval", type=float, default=0.3,
@@ -158,8 +160,14 @@ def main():
     else:
         print("\n[!] CHE DO --no-limits: KHONG check limit switch.")
 
+    # Set toc do truoc
+    pwm_value = args.speed * 25
+    print(f"\n[INFO] Set toc do: {args.speed}/9 (PWM {pwm_value}/255)")
+    ser.write(str(args.speed).encode())
+    time.sleep(0.05)
+
     # Gui lenh quay
-    print(f"\n[INFO] Gui lenh '{cmd_byte.decode()}' -> Motor {cmd_name}...")
+    print(f"[INFO] Gui lenh '{cmd_byte.decode()}' -> Motor {cmd_name}...")
     ser.write(cmd_byte)
 
     print(f"[INFO] Motor dang quay. ", end="")
