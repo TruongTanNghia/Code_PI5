@@ -97,7 +97,8 @@ def main():
     parser.add_argument("--no-limits", action="store_true")
     parser.add_argument("--time", type=float, default=0)
     parser.add_argument("--debounce", type=int, default=3)
-    parser.add_argument("--speed", type=int, default=4, choices=range(0, 10))
+    parser.add_argument("--speed", type=int, default=2, choices=range(0, 10),
+                        help="Toc do 0-9 (default 2 = PWM 50, cham). Tang neu can nhanh hon.")
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--log-interval", type=float, default=0.3)
     parser.add_argument("-h", "--help", action="store_true")
