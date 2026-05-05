@@ -1,153 +1,178 @@
-"""
-Test 4 cong tac hanh trinh - LIVE MONITOR + CHECKLIST.
-
-Khong quay motor. Treo chay vinh vien, anh bam tung cong tac de verify.
-
-Cach dung:
-    python test_switches.py
-
-Banner se hien "ALL SWITCHES VERIFIED" khi ca 4 cai deu da duoc bam
-va tha it nhat 1 lan -> an toan de chay motor.
-
-Ctrl+C de thoat.
-"""
-import os
-import sys
+import cv2
 import time
-from gpiozero import Button
-from gpiozero.pins.lgpio import LGPIOFactory
-from gpiozero import Device
-Device.pin_factory = LGPIOFactory()
+import serial
+import numpy as np
+import pyrealsense2 as rs
 
-from config import (
-    PIN_M1_LIMIT_MIN, PIN_M1_LIMIT_MAX,
-    PIN_M2_LIMIT_MIN, PIN_M2_LIMIT_MAX,
-    SWITCH_NC,
-)
+from detector import MouseDetector
+from config import DET_PERSIST_FRAMES, DET_CONF
 
+# ================= SERIAL ARDUINO =================
+PORT = "/dev/ttyUSB0"
+BAUD = 9600
 
-class SwitchProbe:
-    def __init__(self, name, pin):
-        self.name = name
-        self.pin = pin
-        self.button = Button(pin, pull_up=True, bounce_time=0.02) if pin is not None else None
-        self.press_count = 0     # so lan da bam
-        self.release_count = 0   # so lan da tha
-        self.last_state = None   # trang thai gan nhat (True=cham)
+ser = serial.Serial(PORT, BAUD, timeout=0.1)
+ser.setDTR(False)
+time.sleep(2)
 
-    def is_triggered(self):
-        """NC: cham = HIGH = is_pressed False"""
-        if self.button is None:
-            return None
-        return (not self.button.is_pressed) if SWITCH_NC else self.button.is_pressed
+# ================= REALSENSE =================
+pipeline = rs.pipeline()
+config = rs.config()
+config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+pipeline.start(config)
 
-    def update(self):
-        """Goi moi loop. Tra ve event neu co thay doi: 'press', 'release', None."""
-        cur = self.is_triggered()
-        if cur is None:
-            return None
-        event = None
-        if self.last_state is not None:
-            if cur and not self.last_state:
-                self.press_count += 1
-                event = "press"
-            elif not cur and self.last_state:
-                self.release_count += 1
-                event = "release"
-        self.last_state = cur
-        return event
+# ================= YOLO MODEL =================
+detector = MouseDetector()
 
-    @property
-    def verified(self):
-        """Da bam VA tha it nhat 1 lan thi coi nhu verified."""
-        return self.press_count >= 1 and self.release_count >= 1
+# ================= TRACKING CONFIG =================
+DEADZONE_X = 70
+DEADZONE_Y = 60
+SEND_INTERVAL = 0.05
+
+last_pan_cmd = ""
+last_tilt_cmd = ""
+last_send_time = 0
+
+last_dets = []
+miss_count = 0
+
+prev_t = time.time()
+fps = 0.0
 
 
-def clear_screen():
-    os.system("clear")
+def send(cmd):
+    ser.write(cmd.encode())
 
 
-def main():
-    probes = [
-        SwitchProbe("M1 MIN", PIN_M1_LIMIT_MIN),
-        SwitchProbe("M1 MAX", PIN_M1_LIMIT_MAX),
-        SwitchProbe("M2 MIN", PIN_M2_LIMIT_MIN),
-        SwitchProbe("M2 MAX", PIN_M2_LIMIT_MAX),
-    ]
+def send_pan(cmd):
+    global last_pan_cmd
+    if cmd != last_pan_cmd:
+        send(cmd)
+        last_pan_cmd = cmd
 
-    event_log = []  # 5 event gan nhat
 
-    try:
-        while True:
-            # Update tat ca probe
-            for p in probes:
-                ev = p.update()
-                if ev:
-                    ts = time.strftime("%H:%M:%S")
-                    if ev == "press":
-                        event_log.append(f"[{ts}] [+] {p.name} BI CHAM (lan thu {p.press_count})")
-                    else:
-                        event_log.append(f"[{ts}] [-] {p.name} duoc tha")
-                    event_log = event_log[-8:]
+def send_tilt(cmd):
+    global last_tilt_cmd
+    if cmd != last_tilt_cmd:
+        send(cmd)
+        last_tilt_cmd = cmd
 
-            # Ve giao dien
-            clear_screen()
-            print("=" * 60)
-            print(" TEST 4 LIMIT SWITCHES — Bam tung cong tac de verify")
-            print(f" Loai: {'NC (Normally Closed)' if SWITCH_NC else 'NO (Normally Open)'}")
-            print("=" * 60)
-            print()
-            print(f" {'Switch':<10} {'GPIO':<8} {'Hien tai':<14} {'#Bam':<6} {'#Tha':<6} {'Verify':<10}")
-            print(" " + "-" * 56)
 
-            all_verified = True
-            for p in probes:
-                pin_str = f"GPIO{p.pin}" if p.pin is not None else "(none)"
-                if p.button is None:
-                    status = "(khong cau hinh)"
-                    verify = "-"
-                    all_verified = False
+try:
+    print("[INFO] RealSense + YOLO tracking ready. ESC de thoat.")
+
+    while True:
+        frames = pipeline.wait_for_frames()
+        color_frame = frames.get_color_frame()
+
+        if not color_frame:
+            continue
+
+        frame = np.asanyarray(color_frame.get_data())
+
+        h, w = frame.shape[:2]
+        frame_cx = w // 2
+        frame_cy = h // 2
+
+        detections = detector.detect(frame)
+
+        if detections:
+            last_dets = detections
+            miss_count = 0
+            display_dets = detections
+            fresh = True
+        else:
+            miss_count += 1
+            if miss_count <= DET_PERSIST_FRAMES:
+                display_dets = last_dets
+                fresh = False
+            else:
+                display_dets = []
+                fresh = False
+
+        target_found = False
+
+        if display_dets:
+            det = max(display_dets, key=lambda d: d.get("conf", 0))
+
+            x1, y1, x2, y2 = det["box"]
+            obj_cx, obj_cy = det["center"]
+            conf = det["conf"]
+
+            dx = obj_cx - frame_cx
+            dy = obj_cy - frame_cy
+
+            target_found = True
+
+            color = (0, 255, 0) if fresh else (0, 200, 200)
+
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+            cv2.circle(frame, (obj_cx, obj_cy), 5, (0, 0, 255), -1)
+            cv2.circle(frame, (frame_cx, frame_cy), 6, (255, 0, 0), -1)
+            cv2.line(frame, (frame_cx, frame_cy), (obj_cx, obj_cy), (255, 255, 0), 2)
+
+            cv2.putText(
+                frame,
+                f"mouse {conf:.2f} dx={dx} dy={dy}",
+                (x1, max(20, y1 - 8)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                color,
+                2
+            )
+
+            now_send = time.time()
+            if now_send - last_send_time >= SEND_INTERVAL:
+                # PAN
+                if dx > DEADZONE_X:
+                    send_pan("d")
+                elif dx < -DEADZONE_X:
+                    send_pan("a")
                 else:
-                    cur = p.is_triggered()
-                    status = "## CHAM ##" if cur else "....tha...."
-                    if p.verified:
-                        verify = "[OK] VERIFIED"
-                    else:
-                        # Hien con thieu gi
-                        need = []
-                        if p.press_count == 0: need.append("bam")
-                        if p.release_count == 0: need.append("tha")
-                        verify = "Can: " + "+".join(need)
-                        all_verified = False
-                print(f" {p.name:<10} {pin_str:<8} {status:<14} {p.press_count:<6} {p.release_count:<6} {verify}")
+                    send_pan("h")
 
-            print()
-            print(" Event log gan nhat:")
-            if not event_log:
-                print("   (chua co su kien — bam thu 1 cong tac di anh!)")
-            else:
-                for e in event_log:
-                    print(f"   {e}")
-            print()
+                # TILT
+                if dy > DEADZONE_Y:
+                    send_tilt("s")
+                elif dy < -DEADZONE_Y:
+                    send_tilt("w")
+                else:
+                    send_tilt("v")
 
-            if all_verified:
-                print(" " + "*" * 56)
-                print(" *   ALL SWITCHES VERIFIED — AN TOAN DE CHAY MOTOR   *")
-                print(" *   Tiep theo: python test_stepper.py               *")
-                print(" " + "*" * 56)
-            else:
-                remaining = sum(1 for p in probes if not p.verified)
-                print(f" Con {remaining}/4 switch chua verify. Bam roi tha tung cai.")
+                last_send_time = now_send
 
-            print("\n (Ctrl+C de thoat)")
-            time.sleep(0.1)
+        if not target_found:
+            send_pan("h")
+            send_tilt("v")
 
-    except KeyboardInterrupt:
-        print("\n\nThoat. Tom tat:")
-        for p in probes:
-            mark = "[OK]" if p.verified else "[--]"
-            print(f"  {mark} {p.name}: {p.press_count} lan bam, {p.release_count} lan tha")
+        # Vung chet o giua frame
+        cv2.rectangle(
+            frame,
+            (frame_cx - DEADZONE_X, frame_cy - DEADZONE_Y),
+            (frame_cx + DEADZONE_X, frame_cy + DEADZONE_Y),
+            (255, 255, 255),
+            1
+        )
 
+        # FPS
+        now = time.time()
+        dt = now - prev_t
+        if dt > 0:
+            fps = 0.9 * fps + 0.1 * (1.0 / dt)
+        prev_t = now
 
-if __name__ == "__main__":
-    main()
+        info = f"FPS: {fps:.1f} conf>={DET_CONF} detected:{len(display_dets)}"
+        cv2.putText(frame, info, (10, 25),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+
+        cv2.imshow("Mouse Auto Tracking - RealSense", frame)
+
+        if cv2.waitKey(1) & 0xFF == 27:
+            break
+
+finally:
+    send("x")
+    time.sleep(0.2)
+    ser.close()
+    pipeline.stop()
+    cv2.destroyAllWindows()
