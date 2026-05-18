@@ -1,132 +1,85 @@
-/*
- * motor_dc.ino - 2 DC motor qua L298N (Channel A + B)
- *
- * SO DO DAU NOI:
- *   Arduino   L298N
- *   ------------------------------
- *   Motor 1 (PAN - trai/phai):
- *   D5 (PWM)  ENA
- *   D6        IN1
- *   D7        IN2
- *
- *   Motor 2 (TILT - len/xuong):
- *   D10 (PWM) ENB
- *   D8        IN3
- *   D9        IN4
- *
- *   GND       GND
- *
- *   L298N      Motor + Nguon
- *   ----------------------------
- *   OUT1, OUT2 -> 2 day Motor 1 (pan)
- *   OUT3, OUT4 -> 2 day Motor 2 (tilt)
- *   12V        -> Nguon DC
- *   GND        -> GND nguon
- *
- * LENH (Serial 9600):
- *   F   -> Motor 1 forward (PHAI, toward M1MAX)
- *   B   -> Motor 1 backward (TRAI, toward M1MIN)
- *   U   -> Motor 2 up (toward M2MAX)
- *   D   -> Motor 2 down (toward M2MIN)
- *   X   -> Stop Motor 1 only
- *   Y   -> Stop Motor 2 only
- *   S   -> STOP ALL motors (emergency)
- *   0-9 -> Set toc do (0=stop, 1=PWM 25, ..., 9=PWM 225)
- */
+#define M1_LEFT   2
+#define M1_RIGHT  3
+#define M2_DOWN   4
+#define M2_UP     5
 
-#define ENA 5    // Motor 1 PWM
-#define IN1 6    // Motor 1 dir 1
-#define IN2 7    // Motor 1 dir 2
+int targetDelay = 4000;   // nhỏ hơn = nhanh hơn, thử 4000 -> 3000 -> 2000
 
-#define IN3 8    // Motor 2 dir 1
-#define IN4 9    // Motor 2 dir 2
-#define ENB 10   // Motor 2 PWM
+bool m1_run = false;
+bool m2_run = false;
 
-int motorSpeed = 100;   // chung cho ca 2 motor
+int m1_pin = -1;
+int m2_pin = -1;
 
+void pulsePin(int pin, int d) {
+  // Active LOW
+  digitalWrite(pin, LOW);
+  delayMicroseconds(d);
+  digitalWrite(pin, HIGH);
+  delayMicroseconds(d);
+}
+
+void stopM1() {
+  m1_run = false;
+  m1_pin = -1;
+  digitalWrite(M1_LEFT, HIGH);
+  digitalWrite(M1_RIGHT, HIGH);
+}
+
+void stopM2() {
+  m2_run = false;
+  m2_pin = -1;
+  digitalWrite(M2_UP, HIGH);
+  digitalWrite(M2_DOWN, HIGH);
+}
+
+void startM1(int pin) {
+  m1_pin = pin;
+  m1_run = true;
+}
+
+void startM2(int pin) {
+  m2_pin = pin;
+  m2_run = true;
+}
 
 void setup() {
   Serial.begin(9600);
 
-  pinMode(ENA, OUTPUT);
-  pinMode(IN1, OUTPUT);
-  pinMode(IN2, OUTPUT);
-  pinMode(ENB, OUTPUT);
-  pinMode(IN3, OUTPUT);
-  pinMode(IN4, OUTPUT);
+  pinMode(M1_LEFT, OUTPUT);
+  pinMode(M1_RIGHT, OUTPUT);
+  pinMode(M2_DOWN, OUTPUT);
+  pinMode(M2_UP, OUTPUT);
 
-  stopAll();
+  // Active LOW: HIGH = không chạy
+  digitalWrite(M1_LEFT, HIGH);
+  digitalWrite(M1_RIGHT, HIGH);
+  digitalWrite(M2_DOWN, HIGH);
+  digitalWrite(M2_UP, HIGH);
 }
-
-
-void m1Forward() {
-  digitalWrite(IN1, HIGH);
-  digitalWrite(IN2, LOW);
-  analogWrite(ENA, motorSpeed);
-}
-
-void m1Backward() {
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, HIGH);
-  analogWrite(ENA, motorSpeed);
-}
-
-void m1Stop() {
-  analogWrite(ENA, 0);
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, LOW);
-}
-
-
-void m2Forward() {
-  digitalWrite(IN3, HIGH);
-  digitalWrite(IN4, LOW);
-  analogWrite(ENB, motorSpeed);
-}
-
-void m2Backward() {
-  digitalWrite(IN3, LOW);
-  digitalWrite(IN4, HIGH);
-  analogWrite(ENB, motorSpeed);
-}
-
-void m2Stop() {
-  analogWrite(ENB, 0);
-  digitalWrite(IN3, LOW);
-  digitalWrite(IN4, LOW);
-}
-
-
-void stopAll() {
-  m1Stop();
-  m2Stop();
-}
-
 
 void loop() {
-  if (Serial.available()) {
-    char cmd = Serial.read();
+  while (Serial.available()) {
+    char c = Serial.read();
 
-    switch (cmd) {
-      case 'F': m1Forward();  break;
-      case 'B': m1Backward(); break;
-      case 'U': m2Forward();  break;
-      case 'D': m2Backward(); break;
-      case 'X': m1Stop();     break;
-      case 'Y': m2Stop();     break;
-      case 'S': stopAll();    break;
-      default:
-        if (cmd >= '0' && cmd <= '9') {
-          motorSpeed = (cmd - '0') * 25;
-          // Apply ngay neu motor dang chay
-          if (digitalRead(IN1) == HIGH || digitalRead(IN2) == HIGH) {
-            analogWrite(ENA, motorSpeed);
-          }
-          if (digitalRead(IN3) == HIGH || digitalRead(IN4) == HIGH) {
-            analogWrite(ENB, motorSpeed);
-          }
-        }
-        break;
+    if (c == 'a') startM1(M1_LEFT);        // trái
+    else if (c == 'd') startM1(M1_RIGHT);  // phải
+    else if (c == 's') startM2(M2_DOWN);   // xuống
+    else if (c == 'w') startM2(M2_UP);     // lên
+
+    else if (c == 'h') stopM1();           // dừng ngang
+    else if (c == 'v') stopM2();           // dừng dọc
+    else if (c == 'x') {
+      stopM1();
+      stopM2();
     }
+  }
+
+  if (m1_run && m1_pin != -1) {
+    pulsePin(m1_pin, targetDelay);
+  }
+
+  if (m2_run && m2_pin != -1) {
+    pulsePin(m2_pin, targetDelay);
   }
 }

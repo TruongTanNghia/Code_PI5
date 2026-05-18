@@ -1,98 +1,451 @@
-"""
-TEST 4 KENH PC817 - DON GIAN NHAT.
+# import cv2
+# import time
+# import serial
+# import numpy as np
+# import pyrealsense2 as rs
 
-Cach dung:
-    python spin.py 1            # kenh U1, 200 step/s (default - thay motor xoay ro)
-    python spin.py 1 500        # kenh U1, 500 step/s (rat nhanh)
-    python spin.py 1 50         # kenh U1, 50 step/s (cham, de quan sat LED)
-    python spin.py 1 5          # kenh U1, 5 step/s (cuc cham)
+# from detector import MouseDetector
+# from config import DET_PERSIST_FRAMES, DET_CONF
 
-Kenh:
-    1 = U1 (driver1 CW  - motor1 thuan)
-    2 = U2 (driver1 CCW - motor1 nguoc)
-    3 = U3 (driver2 CW  - motor2 thuan)
-    4 = U4 (driver2 CCW - motor2 nguoc)
-"""
-import sys
+# # ================= SERIAL ARDUINO =================
+# PORT = "/dev/ttyUSB0"
+# BAUD = 9600
+
+# ser = serial.Serial(PORT, BAUD, timeout=0.1)
+# ser.setDTR(False)
+# time.sleep(2)
+
+# # ================= REALSENSE =================
+# pipeline = rs.pipeline()
+# config = rs.config()
+# config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+# pipeline.start(config)
+
+# # ================= YOLO =================
+# detector = MouseDetector()
+
+# # ================= TRACKING CONFIG =================
+# # Vùng "đứng yên" - vào trong vùng này thì motor dừng hẳn.
+# # Trục Y nới rộng hơn vì motor dọc đang quá đà.
+# DEADZONE_X = 60
+# DEADZONE_Y = 70
+
+# # Khoảng cách (pixel) tính từ deadzone, tại đó motor chạy hết tốc (duty=1.0).
+# # Kéo dài thêm -> motor phải lệch rất xa mới full-speed -> chậm tổng thể.
+# MAX_ERROR_X = 320
+# MAX_ERROR_Y = 360
+
+# # Duty tối thiểu khi gần deadzone. Hạ thấp -> mỗi pulse rất ngắn -> nhích ít.
+# MIN_DUTY_X = 0.10
+# MIN_DUTY_Y = 0.08
+
+# # Chu kỳ PWM phần mềm. RÚT NGẮN -> mỗi cú nhích ngắn hơn hẳn.
+# # (vd duty 0.1 * cycle 0.06s = motor chỉ chạy 6ms mỗi nhịp, rồi nghỉ 54ms)
+# CYCLE_PERIOD = 0.06
+
+# # Throttle nhẹ tránh spam serial khi command đổi liên tục.
+# SEND_THROTTLE = 0.01
+
+
+# class AxisController:
+#     """
+#     PWM phần mềm cho 1 trục.
+#     Tự tính duty cycle dựa trên sai số dx (hoặc dy).
+#     Chỉ gửi serial khi command đổi -> không spam Arduino.
+#     """
+
+#     def __init__(self, pos_cmd, neg_cmd, stop_cmd,
+#                  deadzone, max_error,
+#                  min_duty,
+#                  cycle_period=CYCLE_PERIOD):
+#         self.pos_cmd = pos_cmd        # vd: 'd' (phải) hoặc 's' (xuống)
+#         self.neg_cmd = neg_cmd        # vd: 'a' (trái) hoặc 'w' (lên)
+#         self.stop_cmd = stop_cmd      # vd: 'h' hoặc 'v'
+#         self.deadzone = deadzone
+#         self.max_error = max_error
+#         self.min_duty = min_duty
+#         self.cycle_period = cycle_period
+
+#         self.last_cmd = None
+#         self.last_send_t = 0.0
+#         self.cycle_t0 = time.time()
+
+#     def _duty_from_error(self, abs_err):
+#         if abs_err <= self.deadzone:
+#             return 0.0
+#         if abs_err >= self.max_error:
+#             return 1.0
+#         # ramp tuyến tính từ min_duty -> 1.0
+#         ratio = (abs_err - self.deadzone) / (self.max_error - self.deadzone)
+#         return self.min_duty + (1.0 - self.min_duty) * ratio
+
+#     def update(self, error, send_fn, force_stop=False):
+#         now = time.time()
+
+#         if force_stop:
+#             duty = 0.0
+#         else:
+#             duty = self._duty_from_error(abs(error))
+
+#         if duty <= 0.0:
+#             target = self.stop_cmd
+#         else:
+#             # Trong mỗi chu kỳ CYCLE_PERIOD: ON trong (duty * CYCLE_PERIOD),
+#             # OFF phần còn lại -> tạo nhịp pulse.
+#             phase = (now - self.cycle_t0) % self.cycle_period
+#             on_window = duty * self.cycle_period
+#             if phase < on_window:
+#                 target = self.pos_cmd if error > 0 else self.neg_cmd
+#             else:
+#                 target = self.stop_cmd
+
+#         # Chỉ gửi khi command thực sự đổi (giảm tải serial + Arduino).
+#         if target != self.last_cmd and (now - self.last_send_t) >= SEND_THROTTLE:
+#             send_fn(target)
+#             self.last_cmd = target
+#             self.last_send_t = now
+
+
+# def send(cmd):
+#     print("[SEND]", cmd)
+#     ser.write(cmd.encode())
+#     ser.flush()
+
+
+# # Trục ngang (pan): dx > 0 -> đối tượng ở bên phải -> camera quay phải ('d')
+# axis_x = AxisController(
+#     pos_cmd="d", neg_cmd="a", stop_cmd="h",
+#     deadzone=DEADZONE_X, max_error=MAX_ERROR_X,
+#     min_duty=MIN_DUTY_X
+# )
+# # Trục dọc (tilt): dy > 0 -> đối tượng ở phía dưới -> camera cúi xuống ('s')
+# axis_y = AxisController(
+#     pos_cmd="s", neg_cmd="w", stop_cmd="v",
+#     deadzone=DEADZONE_Y, max_error=MAX_ERROR_Y,
+#     min_duty=MIN_DUTY_Y
+# )
+
+# last_dets = []
+# miss_count = 0
+# prev_t = time.time()
+# fps = 0.0
+
+
+# try:
+#     print("[INFO] RealSense + YOLO tracking ready. ESC de thoat.")
+
+#     while True:
+#         frames = pipeline.wait_for_frames()
+#         color_frame = frames.get_color_frame()
+#         if not color_frame:
+#             continue
+
+#         frame = np.asanyarray(color_frame.get_data())
+#         h, w = frame.shape[:2]
+#         frame_cx = w // 2
+#         frame_cy = h // 2
+
+#         detections = detector.detect(frame)
+
+#         if detections:
+#             last_dets = detections
+#             miss_count = 0
+#             display_dets = detections
+#             fresh = True
+#         else:
+#             miss_count += 1
+#             if miss_count <= DET_PERSIST_FRAMES:
+#                 display_dets = last_dets
+#                 fresh = False
+#             else:
+#                 display_dets = []
+#                 fresh = False
+
+#         target_found = False
+#         dx = 0
+#         dy = 0
+
+#         if display_dets:
+#             det = max(display_dets, key=lambda d: d.get("conf", 0))
+#             x1, y1, x2, y2 = det["box"]
+#             obj_cx, obj_cy = det["center"]
+#             conf = det["conf"]
+
+#             dx = obj_cx - frame_cx
+#             dy = obj_cy - frame_cy
+#             target_found = True
+
+#             color = (0, 255, 0) if fresh else (0, 200, 200)
+#             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+#             cv2.circle(frame, (obj_cx, obj_cy), 5, (0, 0, 255), -1)
+#             cv2.circle(frame, (frame_cx, frame_cy), 6, (255, 0, 0), -1)
+#             cv2.line(frame, (frame_cx, frame_cy),
+#                      (obj_cx, obj_cy), (255, 255, 0), 2)
+#             cv2.putText(
+#                 frame,
+#                 f"mouse {conf:.2f} dx={dx} dy={dy}",
+#                 (x1, max(20, y1 - 8)),
+#                 cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2
+#             )
+
+#         # ===== Điều khiển motor: PWM phần mềm theo sai số =====
+#         # Khi mất target -> force_stop=True -> motor dừng ngay.
+#         axis_x.update(dx, send, force_stop=not target_found)
+#         axis_y.update(dy, send, force_stop=not target_found)
+
+#         # ===== Vẽ vùng deadzone =====
+#         cv2.rectangle(
+#             frame,
+#             (frame_cx - DEADZONE_X, frame_cy - DEADZONE_Y),
+#             (frame_cx + DEADZONE_X, frame_cy + DEADZONE_Y),
+#             (255, 255, 255), 1
+#         )
+
+#         # ===== FPS =====
+#         now = time.time()
+#         dt = now - prev_t
+#         if dt > 0:
+#             fps = 0.9 * fps + 0.1 * (1.0 / dt)
+#         prev_t = now
+
+#         info = f"FPS: {fps:.1f} conf>={DET_CONF} det:{len(display_dets)}"
+#         cv2.putText(frame, info, (10, 25),
+#                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+
+#         cv2.imshow("Mouse Auto Tracking - RealSense", frame)
+#         if cv2.waitKey(1) & 0xFF == 27:
+#             break
+
+# finally:
+#     send("x")
+#     time.sleep(0.2)
+#     ser.close()
+#     pipeline.stop()
+#     cv2.destroyAllWindows()
+
+
+import cv2
 import time
-from gpiozero import OutputDevice
-from gpiozero.pins.lgpio import LGPIOFactory
-from gpiozero import Device
-Device.pin_factory = LGPIOFactory()
+import serial
+import numpy as np
+import pyrealsense2 as rs
 
-from config import (
-    PIN_M1_CW, PIN_M1_CCW,
-    PIN_M2_CW, PIN_M2_CCW,
+from detector import MouseDetector
+from config import DET_PERSIST_FRAMES, DET_CONF
+
+# ================= SERIAL ARDUINO =================
+PORT = "/dev/ttyUSB0"
+BAUD = 9600
+
+ser = serial.Serial(PORT, BAUD, timeout=0.1)
+ser.setDTR(False)
+time.sleep(2)
+
+# ================= REALSENSE =================
+pipeline = rs.pipeline()
+config = rs.config()
+config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+pipeline.start(config)
+
+# ================= YOLO =================
+detector = MouseDetector()
+
+# ================= TRACKING CONFIG =================
+# Vùng "đứng yên" - vào trong vùng này thì motor dừng hẳn.
+# Trục Y nới rộng hơn vì motor dọc đang quá đà.
+DEADZONE_X = 60
+DEADZONE_Y = 70
+
+# Khoảng cách (pixel) tính từ deadzone, tại đó motor chạy hết tốc (duty=1.0).
+# Kéo dài thêm -> motor phải lệch rất xa mới full-speed -> chậm tổng thể.
+MAX_ERROR_X = 400
+MAX_ERROR_Y = 440
+
+# Duty tối thiểu khi gần deadzone. Hạ thấp -> mỗi pulse rất ngắn -> nhích ít.
+# Nếu motor không nhúc nhích được nữa thì TĂNG LẠI (lực ma sát tĩnh).
+MIN_DUTY_X = 0.06
+MIN_DUTY_Y = 0.05
+
+# Chu kỳ PWM phần mềm. RÚT NGẮN -> mỗi cú nhích ngắn hơn hẳn.
+# (vd duty 0.05 * cycle 0.04s = motor chỉ chạy 2ms mỗi nhịp, rồi nghỉ 38ms)
+CYCLE_PERIOD = 0.04
+
+# Throttle nhẹ tránh spam serial khi command đổi liên tục.
+SEND_THROTTLE = 0.01
+
+
+class AxisController:
+    """
+    PWM phần mềm cho 1 trục.
+    Tự tính duty cycle dựa trên sai số dx (hoặc dy).
+    Chỉ gửi serial khi command đổi -> không spam Arduino.
+    """
+
+    def __init__(self, pos_cmd, neg_cmd, stop_cmd,
+                 deadzone, max_error,
+                 min_duty,
+                 cycle_period=CYCLE_PERIOD):
+        self.pos_cmd = pos_cmd        # vd: 'd' (phải) hoặc 's' (xuống)
+        self.neg_cmd = neg_cmd        # vd: 'a' (trái) hoặc 'w' (lên)
+        self.stop_cmd = stop_cmd      # vd: 'h' hoặc 'v'
+        self.deadzone = deadzone
+        self.max_error = max_error
+        self.min_duty = min_duty
+        self.cycle_period = cycle_period
+
+        self.last_cmd = None
+        self.last_send_t = 0.0
+        self.cycle_t0 = time.time()
+
+    def _duty_from_error(self, abs_err):
+        if abs_err <= self.deadzone:
+            return 0.0
+        if abs_err >= self.max_error:
+            return 1.0
+        # ramp tuyến tính từ min_duty -> 1.0
+        ratio = (abs_err - self.deadzone) / (self.max_error - self.deadzone)
+        return self.min_duty + (1.0 - self.min_duty) * ratio
+
+    def update(self, error, send_fn, force_stop=False):
+        now = time.time()
+
+        if force_stop:
+            duty = 0.0
+        else:
+            duty = self._duty_from_error(abs(error))
+
+        if duty <= 0.0:
+            target = self.stop_cmd
+        else:
+            # Trong mỗi chu kỳ CYCLE_PERIOD: ON trong (duty * CYCLE_PERIOD),
+            # OFF phần còn lại -> tạo nhịp pulse.
+            phase = (now - self.cycle_t0) % self.cycle_period
+            on_window = duty * self.cycle_period
+            if phase < on_window:
+                target = self.pos_cmd if error > 0 else self.neg_cmd
+            else:
+                target = self.stop_cmd
+
+        # Chỉ gửi khi command thực sự đổi (giảm tải serial + Arduino).
+        if target != self.last_cmd and (now - self.last_send_t) >= SEND_THROTTLE:
+            send_fn(target)
+            self.last_cmd = target
+            self.last_send_t = now
+
+
+def send(cmd):
+    print("[SEND]", cmd)
+    ser.write(cmd.encode())
+    ser.flush()
+
+
+# Trục ngang (pan): dx > 0 -> đối tượng ở bên phải -> camera quay phải ('d')
+axis_x = AxisController(
+    pos_cmd="d", neg_cmd="a", stop_cmd="h",
+    deadzone=DEADZONE_X, max_error=MAX_ERROR_X,
+    min_duty=MIN_DUTY_X
+)
+# Trục dọc (tilt): dy > 0 -> đối tượng ở phía dưới -> camera cúi xuống ('s')
+axis_y = AxisController(
+    pos_cmd="s", neg_cmd="w", stop_cmd="v",
+    deadzone=DEADZONE_Y, max_error=MAX_ERROR_Y,
+    min_duty=MIN_DUTY_Y
 )
 
-CHANNELS = {
-    "1": (PIN_M1_CW,  "U1", "Driver 1 - CW  (motor 1 thuan)"),
-    "2": (PIN_M1_CCW, "U2", "Driver 1 - CCW (motor 1 nguoc)"),
-    "3": (PIN_M2_CW,  "U3", "Driver 2 - CW  (motor 2 thuan)"),
-    "4": (PIN_M2_CCW, "U4", "Driver 2 - CCW (motor 2 nguoc)"),
-}
+last_dets = []
+miss_count = 0
+prev_t = time.time()
+fps = 0.0
 
-ch = sys.argv[1] if len(sys.argv) > 1 else "1"
-sps = int(sys.argv[2]) if len(sys.argv) > 2 else 200  # mac dinh 200 step/s
-
-if ch not in CHANNELS:
-    print(f"Sai tham so. Dung: python spin.py [1|2|3|4] [step/giay]")
-    sys.exit(1)
-
-PIN, U_NAME, DESC = CHANNELS[ch]
-
-# Tinh chu ky xung tu sps (step per second)
-half = 0.5 / sps
-PULSE_HIGH = half
-PULSE_LOW  = half
-
-pin = OutputDevice(PIN, initial_value=False)
-
-print()
-print("=" * 55)
-print(f"  TEST KENH {ch} -> PC817 {U_NAME}")
-print("=" * 55)
-print(f"  Pi GPIO: {PIN}")
-print(f"  PC817:   IN{ch} -> {U_NAME}")
-print(f"  {DESC}")
-print(f"  Toc do: {sps} step/giay = {sps * 0.72:.1f} deg/giay "
-      f"= {sps * 0.72 / 360:.1f} vong/giay")
-print(f"  Xung: {PULSE_HIGH*1000:.1f}ms HIGH + {PULSE_LOW*1000:.1f}ms LOW")
-print()
-print("Ctrl+C de dung.")
-print()
-
-count = 0
-t_start = time.time()
-last_print = 0
 
 try:
+    print("[INFO] RealSense + YOLO tracking ready. ESC de thoat.")
+
     while True:
-        pin.on()
-        time.sleep(PULSE_HIGH)
-        pin.off()
-        time.sleep(PULSE_LOW)
-        count += 1
+        frames = pipeline.wait_for_frames()
+        color_frame = frames.get_color_frame()
+        if not color_frame:
+            continue
 
-        # In trang thai moi 0.3s (de khong spam terminal)
+        frame = np.asanyarray(color_frame.get_data())
+        h, w = frame.shape[:2]
+        frame_cx = w // 2
+        frame_cy = h // 2
+
+        detections = detector.detect(frame)
+
+        if detections:
+            last_dets = detections
+            miss_count = 0
+            display_dets = detections
+            fresh = True
+        else:
+            miss_count += 1
+            if miss_count <= DET_PERSIST_FRAMES:
+                display_dets = last_dets
+                fresh = False
+            else:
+                display_dets = []
+                fresh = False
+
+        target_found = False
+        dx = 0
+        dy = 0
+
+        if display_dets:
+            det = max(display_dets, key=lambda d: d.get("conf", 0))
+            x1, y1, x2, y2 = det["box"]
+            obj_cx, obj_cy = det["center"]
+            conf = det["conf"]
+
+            dx = obj_cx - frame_cx
+            dy = obj_cy - frame_cy
+            target_found = True
+
+            color = (0, 255, 0) if fresh else (0, 200, 200)
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+            cv2.circle(frame, (obj_cx, obj_cy), 5, (0, 0, 255), -1)
+            cv2.circle(frame, (frame_cx, frame_cy), 6, (255, 0, 0), -1)
+            cv2.line(frame, (frame_cx, frame_cy),
+                     (obj_cx, obj_cy), (255, 255, 0), 2)
+            cv2.putText(
+                frame,
+                f"mouse {conf:.2f} dx={dx} dy={dy}",
+                (x1, max(20, y1 - 8)),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2
+            )
+
+        # ===== Điều khiển motor: PWM phần mềm theo sai số =====
+        # Khi mất target -> force_stop=True -> motor dừng ngay.
+        axis_x.update(dx, send, force_stop=not target_found)
+        axis_y.update(dy, send, force_stop=not target_found)
+
+        # ===== Vẽ vùng deadzone =====
+        cv2.rectangle(
+            frame,
+            (frame_cx - DEADZONE_X, frame_cy - DEADZONE_Y),
+            (frame_cx + DEADZONE_X, frame_cy + DEADZONE_Y),
+            (255, 255, 255), 1
+        )
+
+        # ===== FPS =====
         now = time.time()
-        if now - last_print >= 0.3:
-            elapsed = now - t_start
-            print(f"  KENH {ch} ({U_NAME})  STEP {count:6d}  "
-                  f"|  goc tich luy: {count * 0.72:8.1f} deg "
-                  f"({count * 0.72 / 360:.2f} vong)  "
-                  f"|  {elapsed:5.1f}s", flush=True)
-            last_print = now
+        dt = now - prev_t
+        if dt > 0:
+            fps = 0.9 * fps + 0.1 * (1.0 / dt)
+        prev_t = now
 
-except KeyboardInterrupt:
-    elapsed = time.time() - t_start
-    print()
-    print(f"\nDA DUNG.")
-    print(f"  Tong: {count} step ({count * 0.72:.1f} deg = "
-          f"{count * 0.72 / 360:.2f} vong)")
-    print(f"  Thoi gian: {elapsed:.1f}s")
-    print(f"  Toc do thuc te: {count/elapsed:.0f} step/giay")
+        info = f"FPS: {fps:.1f} conf>={DET_CONF} det:{len(display_dets)}"
+        cv2.putText(frame, info, (10, 25),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+
+        cv2.imshow("Mouse Auto Tracking - RealSense", frame)
+        if cv2.waitKey(1) & 0xFF == 27:
+            break
 
 finally:
-    pin.off()
-    pin.close()
+    send("x")
+    time.sleep(0.2)
+    ser.close()
+    pipeline.stop()
+    cv2.destroyAllWindows()

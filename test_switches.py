@@ -29,10 +29,7 @@ DEADZONE_X = 70
 DEADZONE_Y = 60
 SEND_INTERVAL = 0.05
 
-last_pan_cmd = ""
-last_tilt_cmd = ""
 last_send_time = 0
-
 last_dets = []
 miss_count = 0
 
@@ -41,21 +38,9 @@ fps = 0.0
 
 
 def send(cmd):
+    print("[SEND]", cmd)
     ser.write(cmd.encode())
-
-
-def send_pan(cmd):
-    global last_pan_cmd
-    if cmd != last_pan_cmd:
-        send(cmd)
-        last_pan_cmd = cmd
-
-
-def send_tilt(cmd):
-    global last_tilt_cmd
-    if cmd != last_tilt_cmd:
-        send(cmd)
-        last_tilt_cmd = cmd
+    ser.flush()
 
 
 try:
@@ -123,29 +108,32 @@ try:
 
             now_send = time.time()
             if now_send - last_send_time >= SEND_INTERVAL:
-                # PAN
+                # PAN trái/phải
                 if dx > DEADZONE_X:
-                    send_pan("d")
+                    send("d")
                 elif dx < -DEADZONE_X:
-                    send_pan("a")
+                    send("a")
                 else:
-                    send_pan("h")
+                    send("h")
 
-                # TILT
+                # TILT lên/xuống
                 if dy > DEADZONE_Y:
-                    send_tilt("s")
+                    send("s")
                 elif dy < -DEADZONE_Y:
-                    send_tilt("w")
+                    send("w")
                 else:
-                    send_tilt("v")
+                    send("v")
 
                 last_send_time = now_send
 
         if not target_found:
-            send_pan("h")
-            send_tilt("v")
+            now_send = time.time()
+            if now_send - last_send_time >= SEND_INTERVAL:
+                send("h")
+                send("v")
+                last_send_time = now_send
 
-        # Vung chet o giua frame
+        # Vùng chết ở giữa frame
         cv2.rectangle(
             frame,
             (frame_cx - DEADZONE_X, frame_cy - DEADZONE_Y),
@@ -162,8 +150,15 @@ try:
         prev_t = now
 
         info = f"FPS: {fps:.1f} conf>={DET_CONF} detected:{len(display_dets)}"
-        cv2.putText(frame, info, (10, 25),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+        cv2.putText(
+            frame,
+            info,
+            (10, 25),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (0, 255, 255),
+            2
+        )
 
         cv2.imshow("Mouse Auto Tracking - RealSense", frame)
 
