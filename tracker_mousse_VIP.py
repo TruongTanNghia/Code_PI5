@@ -26,14 +26,9 @@ detector = MouseDetector()
 
 # ================= TRACKING CONFIG =================
 # Vùng "đứng yên" - vào trong vùng này thì motor dừng hẳn + laser bật.
-# Nhỏ hơn = ngắm chính xác hơn (nhưng motor khó vào tâm hơn, dễ rung).
+# Nhỏ hơn = laser ngắm chính xác hơn vào giữa con chuột, nhưng motor khó vào tâm.
 DEADZONE_X = 35
 DEADZONE_Y = 40
-
-# Tolerance nhỏ để chống rung mép. dx/dy giờ là khoảng cách từ box đến mép
-# deadzone (chứ không phải đến tâm), nên ngưỡng này nhỏ thôi.
-AXIS_TOL_X = 5
-AXIS_TOL_Y = 5
 
 # Khoảng cách (pixel) tính từ deadzone, tại đó motor chạy hết tốc (duty=1.0).
 # Kéo dài thêm -> motor phải lệch rất xa mới full-speed -> chậm tổng thể.
@@ -135,13 +130,13 @@ def set_laser(on):
 # Trục ngang (pan): dx > 0 -> đối tượng ở bên phải -> camera quay phải ('d')
 axis_x = AxisController(
     pos_cmd="d", neg_cmd="a", stop_cmd="h",
-    deadzone=AXIS_TOL_X, max_error=MAX_ERROR_X,
+    deadzone=DEADZONE_X, max_error=MAX_ERROR_X,
     min_duty=MIN_DUTY_X
 )
 # Trục dọc (tilt): dy > 0 -> đối tượng ở phía dưới -> camera cúi xuống ('s')
 axis_y = AxisController(
     pos_cmd="s", neg_cmd="w", stop_cmd="v",
-    deadzone=AXIS_TOL_Y, max_error=MAX_ERROR_Y,
+    deadzone=DEADZONE_Y, max_error=MAX_ERROR_Y,
     min_duty=MIN_DUTY_Y
 )
 
@@ -184,8 +179,7 @@ try:
         target_found = False
         dx = 0
         dy = 0
-        box_in_deadzone_x = False
-        box_in_deadzone_y = False
+        center_in_deadzone = False
 
         if display_dets:
             det = max(display_dets, key=lambda d: d.get("conf", 0))
@@ -195,32 +189,13 @@ try:
 
             target_found = True
 
-            # ===== ERROR THEO MÉP BOX, KHÔNG PHẢI TÂM =====
-            # Mép trái/phải deadzone (toạ độ frame)
-            dz_left   = frame_cx - DEADZONE_X
-            dz_right  = frame_cx + DEADZONE_X
-            dz_top    = frame_cy - DEADZONE_Y
-            dz_bottom = frame_cy + DEADZONE_Y
+            # ===== ERROR THEO TÂM BOX vs TÂM FRAME =====
+            # Laser gắn cố định ở tâm frame -> phải kéo tâm con chuột về đó
+            # thì laser mới chiếu giữa con chuột.
+            dx = obj_cx - frame_cx
+            dy = obj_cy - frame_cy
 
-            # Trục X: nếu box giao với cột deadzone -> coi như trúng (dx=0)
-            if x2 < dz_left:
-                # box hoàn toàn ở bên trái deadzone -> cần quay trái (dx âm)
-                dx = x2 - dz_left           # giá trị âm, độ lớn = khoảng cách
-            elif x1 > dz_right:
-                # box hoàn toàn ở bên phải deadzone -> cần quay phải (dx dương)
-                dx = x1 - dz_right          # giá trị dương
-            else:
-                dx = 0
-                box_in_deadzone_x = True
-
-            # Trục Y: tương tự
-            if y2 < dz_top:
-                dy = y2 - dz_top            # âm -> đi lên
-            elif y1 > dz_bottom:
-                dy = y1 - dz_bottom         # dương -> đi xuống
-            else:
-                dy = 0
-                box_in_deadzone_y = True
+            center_in_deadzone = (abs(dx) <= DEADZONE_X and abs(dy) <= DEADZONE_Y)
 
             color = (0, 255, 0) if fresh else (0, 200, 200)
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
@@ -240,12 +215,12 @@ try:
         axis_x.update(dx, send, force_stop=not target_found)
         axis_y.update(dy, send, force_stop=not target_found)
 
-        # ===== Laser: bật khi deadzone đã chạm vào bounding box =====
-        in_target = target_found and box_in_deadzone_x and box_in_deadzone_y
+        # ===== Laser: bật khi tâm con chuột đã vào deadzone =====
+        in_target = target_found and center_in_deadzone
         set_laser(in_target)
 
-        # ===== Vẽ vùng deadzone (xanh = đã chạm box, trắng = chưa) =====
-        dz_color = (0, 255, 0) if (target_found and box_in_deadzone_x and box_in_deadzone_y) else (255, 255, 255)
+        # ===== Vẽ vùng deadzone (xanh = tâm chuột trong vùng, trắng = chưa) =====
+        dz_color = (0, 255, 0) if (target_found and center_in_deadzone) else (255, 255, 255)
         cv2.rectangle(
             frame,
             (frame_cx - DEADZONE_X, frame_cy - DEADZONE_Y),
