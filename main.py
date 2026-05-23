@@ -1,128 +1,324 @@
 import cv2
-import math
-from camera import Camera
+import time
+import serial
+import numpy as np
+import pyrealsense2 as rs
+
 from detector import MouseDetector
-from servo import ServoController
-from tracker import Tracker
-from laser import LaserController
-from config import (
-    FRAME_WIDTH, FRAME_HEIGHT, KP,
-    LOCK_THRESHOLD, LOCK_FRAMES_REQUIRED,
+from config import DET_PERSIST_FRAMES, DET_CONF
+
+# ================= SERIAL ARDUINO =================
+PORT = "/dev/ttyUSB0"
+BAUD = 9600
+
+ser = serial.Serial(PORT, BAUD, timeout=0.1)
+ser.setDTR(False)
+time.sleep(2)
+
+# ================= REALSENSE =================
+pipeline = rs.pipeline()
+config = rs.config()
+config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+pipeline.start(config)
+
+# ================= YOLO =================
+detector = MouseDetector()
+
+# ================= TRACKING CONFIG =================
+# Vùng "đứng yên" - vào trong vùng này thì motor dừng hẳn + laser bật.
+# Nhỏ hơn = laser ngắm chính xác hơn vào giữa con chuột, nhưng motor khó vào tâm.
+DEADZONE_X = 35
+DEADZONE_Y = 40
+
+# ===== LASER OFFSET (CALIBRATE) =====
+# Laser gắn LỆCH so với camera -> điểm laser chiếu trên frame KHÔNG phải tâm frame.
+# Hai số này là vị trí laser thực sự, tính từ tâm frame.
+# Khi chương trình chạy, dùng phím I/J/K/L để dịch aim point cho đến khi
+# crosshair vàng trùng với chấm laser đỏ thật, rồi copy giá trị in trên console
+# vào đây cho lần chạy sau.
+LASER_OFFSET_X = 0
+LASER_OFFSET_Y = 0
+
+# Bước dịch khi nhấn phím calibrate
+CAL_STEP = 2
+
+# Khoảng cách (pixel) tính từ deadzone, tại đó motor chạy hết tốc (duty=1.0).
+# Kéo dài thêm -> motor phải lệch rất xa mới full-speed -> chậm tổng thể.
+MAX_ERROR_X = 400
+MAX_ERROR_Y = 440
+
+# Duty tối thiểu khi gần deadzone. Hạ thấp -> mỗi pulse rất ngắn -> nhích ít.
+# Nếu motor không nhúc nhích được nữa thì TĂNG LẠI (lực ma sát tĩnh).
+MIN_DUTY_X = 0.12
+MIN_DUTY_Y = 0.10
+
+# Chu kỳ PWM phần mềm. RÚT NGẮN -> mỗi cú nhích ngắn hơn hẳn.
+# (vd duty 0.05 * cycle 0.04s = motor chỉ chạy 2ms mỗi nhịp, rồi nghỉ 38ms)
+CYCLE_PERIOD = 0.04
+
+# Throttle nhẹ tránh spam serial khi command đổi liên tục.
+SEND_THROTTLE = 0.01
+
+
+class AxisController:
+    """
+    PWM phần mềm cho 1 trục.
+    Tự tính duty cycle dựa trên sai số dx (hoặc dy).
+    Chỉ gửi serial khi command đổi -> không spam Arduino.
+    """
+
+    def __init__(self, pos_cmd, neg_cmd, stop_cmd,
+                 deadzone, max_error,
+                 min_duty,
+                 cycle_period=CYCLE_PERIOD):
+        self.pos_cmd = pos_cmd        # vd: 'd' (phải) hoặc 's' (xuống)
+        self.neg_cmd = neg_cmd        # vd: 'a' (trái) hoặc 'w' (lên)
+        self.stop_cmd = stop_cmd      # vd: 'h' hoặc 'v'
+        self.deadzone = deadzone
+        self.max_error = max_error
+        self.min_duty = min_duty
+        self.cycle_period = cycle_period
+
+        self.last_cmd = None
+        self.last_send_t = 0.0
+        self.cycle_t0 = time.time()
+        self.current_duty = 0.0
+
+    def _duty_from_error(self, abs_err):
+        if abs_err <= self.deadzone:
+            return 0.0
+        if abs_err >= self.max_error:
+            return 1.0
+        # ramp tuyến tính từ min_duty -> 1.0
+        ratio = (abs_err - self.deadzone) / (self.max_error - self.deadzone)
+        return self.min_duty + (1.0 - self.min_duty) * ratio
+
+    def update(self, error, send_fn, force_stop=False):
+        now = time.time()
+
+        if force_stop:
+            duty = 0.0
+        else:
+            duty = self._duty_from_error(abs(error))
+
+        self.current_duty = duty  # lưu để debug
+
+        if duty <= 0.0:
+            target = self.stop_cmd
+        else:
+            # Trong mỗi chu kỳ CYCLE_PERIOD: ON trong (duty * CYCLE_PERIOD),
+            # OFF phần còn lại -> tạo nhịp pulse.
+            phase = (now - self.cycle_t0) % self.cycle_period
+            on_window = duty * self.cycle_period
+            if phase < on_window:
+                target = self.pos_cmd if error > 0 else self.neg_cmd
+            else:
+                target = self.stop_cmd
+
+        # Chỉ gửi khi command thực sự đổi (giảm tải serial + Arduino).
+        if target != self.last_cmd and (now - self.last_send_t) >= SEND_THROTTLE:
+            send_fn(target)
+            self.last_cmd = target
+            self.last_send_t = now
+
+
+def send(cmd):
+    print("[SEND]", cmd)
+    ser.write(cmd.encode())
+    ser.flush()
+
+
+# ================= LASER =================
+laser_on = False
+
+def set_laser(on):
+    """Chỉ gửi serial khi trạng thái laser thật sự đổi."""
+    global laser_on
+    if on and not laser_on:
+        send("L")
+        laser_on = True
+    elif (not on) and laser_on:
+        send("K")
+        laser_on = False
+
+
+# Trục ngang (pan): dx > 0 -> đối tượng ở bên phải -> camera quay phải ('d')
+axis_x = AxisController(
+    pos_cmd="d", neg_cmd="a", stop_cmd="h",
+    deadzone=DEADZONE_X, max_error=MAX_ERROR_X,
+    min_duty=MIN_DUTY_X
+)
+# Trục dọc (tilt): dy > 0 -> đối tượng ở phía dưới -> camera cúi xuống ('s')
+axis_y = AxisController(
+    pos_cmd="s", neg_cmd="w", stop_cmd="v",
+    deadzone=DEADZONE_Y, max_error=MAX_ERROR_Y,
+    min_duty=MIN_DUTY_Y
 )
 
-cam = Camera()
-detector = MouseDetector("./results-mouse/best.pt")
-servo = ServoController()
-tracker = Tracker()
-laser = LaserController()
+last_dets = []
+miss_count = 0
+prev_t = time.time()
+fps = 0.0
 
-last_target_pos = None
-lost_frames = 0
-MAX_LOST_FRAMES = 10
+# Offset runtime, init từ config, có thể chỉnh bằng I/J/K/L
+laser_offset_x = LASER_OFFSET_X
+laser_offset_y = LASER_OFFSET_Y
 
-lock_count = 0  # so frame lien tuc muc tieu nam trong vung khoa
 
 try:
+    print("[INFO] RealSense + YOLO tracking ready. ESC de thoat.")
+
     while True:
-        ret, frame = cam.read()
-        if not ret:
+        frames = pipeline.wait_for_frames()
+        color_frame = frames.get_color_frame()
+        if not color_frame:
             continue
 
-        center_x, center_y = FRAME_WIDTH // 2, FRAME_HEIGHT // 2
+        frame = np.asanyarray(color_frame.get_data())
+        h, w = frame.shape[:2]
+        frame_cx = w // 2
+        frame_cy = h // 2
 
-        # Vong tron khoa muc tieu (theo LOCK_THRESHOLD)
-        cv2.circle(frame, (center_x, center_y), LOCK_THRESHOLD, (0, 255, 255), 1)
-        # Khung ngam phu de de nhin
-        sight_size = 150
-        cv2.rectangle(frame,
-                      (center_x - sight_size // 2, center_y - sight_size // 2),
-                      (center_x + sight_size // 2, center_y + sight_size // 2),
-                      (255, 0, 255), 1)
-        cv2.drawMarker(frame, (center_x, center_y), (255, 255, 255),
-                       cv2.MARKER_CROSS, 20, 1)
+        # Điểm "đích ngắm" thực tế = vị trí laser chiếu trên frame
+        aim_x = frame_cx + laser_offset_x
+        aim_y = frame_cy + laser_offset_y
 
         detections = detector.detect(frame)
 
-        # Chon muc tieu: uu tien con gan vi tri cu (persistence), khong thi gan tam nhat
-        best_target = None
-        min_dist = float('inf')
-        for det in detections:
-            x, y = det['center']
-            if last_target_pos is not None:
-                d_last = math.hypot(x - last_target_pos[0], y - last_target_pos[1])
-                if d_last < 80:
-                    best_target = det
-                    break
-            d_center = math.hypot(x - center_x, y - center_y)
-            if d_center < min_dist:
-                min_dist = d_center
-                best_target = det
-
-        if best_target:
-            last_target_pos = best_target['center']
-            lost_frames = 0
+        if detections:
+            last_dets = detections
+            miss_count = 0
+            display_dets = detections
+            fresh = True
         else:
-            lost_frames += 1
-            if lost_frames > MAX_LOST_FRAMES:
-                last_target_pos = None
-                lock_count = 0  # mat muc tieu thi reset bo dem khoa
-
-        # Ve UI + dieu khien servo + ban laser
-        for det in detections:
-            x, y = det['center']
-            x1, y1, x2, y2 = det['box']
-
-            if det is best_target:
-                dx, dy = tracker.compute(x, y)
-                if dx != 0:
-                    servo.set_pan(servo.pan_angle - dx * KP)
-                if dy != 0:
-                    servo.set_tilt(servo.tilt_angle + dy * KP)
-
-                # Tinh khoang cach den tam thuc te (khong dung dead_zone)
-                dist_center = math.hypot(x - center_x, y - center_y)
-                in_lock_zone = dist_center <= LOCK_THRESHOLD
-
-                if in_lock_zone:
-                    lock_count += 1
-                else:
-                    lock_count = 0
-
-                # Khoa du lau -> ban
-                fired_now = False
-                if lock_count >= LOCK_FRAMES_REQUIRED and laser.can_fire():
-                    fired_now = laser.fire_burst()
-
-                # UI muc tieu
-                color = (0, 0, 255)
-                label = "TARGET LOCK"
-                if laser.is_firing() or fired_now:
-                    color = (0, 255, 255)
-                    label = "FIRING!"
-                elif in_lock_zone:
-                    color = (0, 165, 255)
-                    label = f"LOCKING {lock_count}/{LOCK_FRAMES_REQUIRED}"
-
-                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-                cv2.line(frame, (center_x, center_y), (x, y), color, 2)
-                cv2.putText(frame, label, (x1, y1 - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+            miss_count += 1
+            if miss_count <= DET_PERSIST_FRAMES:
+                display_dets = last_dets
+                fresh = False
             else:
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 1)
-                cv2.putText(frame, "Mouse", (x1, y1 - 5),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
+                display_dets = []
+                fresh = False
 
-        # Status bar
-        status = f"PAN:{int(servo.pan_angle)}  TILT:{int(servo.tilt_angle)}  " \
-                 f"LASER:{'ON' if laser.is_firing() else 'OFF'}  LOCK:{lock_count}"
-        cv2.putText(frame, status, (10, FRAME_HEIGHT - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        target_found = False
+        dx = 0
+        dy = 0
+        center_in_deadzone = False
 
-        cv2.imshow("Mouse Tracking Pi5 - Laser", frame)
-        if cv2.waitKey(1) == 27:  # ESC de thoat
+        if display_dets:
+            det = max(display_dets, key=lambda d: d.get("conf", 0))
+            x1, y1, x2, y2 = det["box"]
+            obj_cx, obj_cy = det["center"]
+            conf = det["conf"]
+
+            target_found = True
+
+            # ===== ERROR THEO TÂM BOX vs AIM POINT (laser thực tế) =====
+            # Laser gắn lệch -> phải kéo tâm con chuột về điểm laser chiếu,
+            # KHÔNG phải về tâm frame.
+            dx = obj_cx - aim_x
+            dy = obj_cy - aim_y
+
+            center_in_deadzone = (abs(dx) <= DEADZONE_X and abs(dy) <= DEADZONE_Y)
+
+            color = (0, 255, 0) if fresh else (0, 200, 200)
+
+            # Vẽ mask seg (tô màu vùng con chuột) nếu có
+            seg_mask = det.get("mask")
+            if seg_mask is not None:
+                overlay = frame.copy()
+                overlay[seg_mask] = color
+                cv2.addWeighted(overlay, 0.4, frame, 0.6, 0, frame)
+
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+            cv2.circle(frame, (obj_cx, obj_cy), 5, (0, 0, 255), -1)
+            cv2.line(frame, (aim_x, aim_y),
+                     (obj_cx, obj_cy), (255, 255, 0), 2)
+            cv2.putText(
+                frame,
+                f"mouse {conf:.2f} dx={dx} dy={dy}",
+                (x1, max(20, y1 - 8)),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2
+            )
+
+        # ===== Điều khiển motor: PWM phần mềm theo sai số =====
+        # Khi mất target -> force_stop=True -> motor dừng ngay.
+        axis_x.update(dx, send, force_stop=not target_found)
+        axis_y.update(dy, send, force_stop=not target_found)
+
+        # ===== Laser: bật khi tâm con chuột đã vào deadzone =====
+        in_target = target_found and center_in_deadzone
+        set_laser(in_target)
+
+        # ===== Vẽ vùng deadzone quanh AIM POINT (xanh = trúng, trắng = chưa) =====
+        dz_color = (0, 255, 0) if (target_found and center_in_deadzone) else (255, 255, 255)
+        cv2.rectangle(
+            frame,
+            (aim_x - DEADZONE_X, aim_y - DEADZONE_Y),
+            (aim_x + DEADZONE_X, aim_y + DEADZONE_Y),
+            dz_color, 1
+        )
+
+        # Crosshair vàng đánh dấu AIM POINT (vị trí laser thực tế)
+        # Khi calibrate đúng, crosshair này phải trùng với chấm laser thật trên frame.
+        cv2.drawMarker(frame, (aim_x, aim_y), (0, 255, 255),
+                       markerType=cv2.MARKER_CROSS, markerSize=20, thickness=2)
+        # Chấm xanh dương = tâm frame thật (tham chiếu)
+        cv2.circle(frame, (frame_cx, frame_cy), 3, (255, 0, 0), -1)
+
+        # ===== FPS =====
+        now = time.time()
+        dt = now - prev_t
+        if dt > 0:
+            fps = 0.9 * fps + 0.1 * (1.0 / dt)
+        prev_t = now
+
+        info = f"FPS: {fps:.1f} conf>={DET_CONF} det:{len(display_dets)}"
+        cv2.putText(frame, info, (10, 25),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+
+        # Debug motor: duty + cmd đang gửi
+        dbg = (f"X duty={axis_x.current_duty:.2f} cmd={axis_x.last_cmd}  "
+               f"Y duty={axis_y.current_duty:.2f} cmd={axis_y.last_cmd}")
+        cv2.putText(frame, dbg, (10, 80),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+
+        # Hiển thị offset hiện tại để calibrate
+        cv2.putText(frame,
+                    f"OFFSET x={laser_offset_x} y={laser_offset_y}  [I/J/K/L=move, R=reset]",
+                    (10, h - 15),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+
+        # Chỉ báo trạng thái laser
+        if laser_on:
+            cv2.putText(frame, "LASER ON", (10, 55),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            cv2.circle(frame, (w - 30, 30), 12, (0, 0, 255), -1)
+
+        cv2.imshow("Mouse Auto Tracking - RealSense", frame)
+        key = cv2.waitKey(1) & 0xFF
+        if key == 27:    # ESC
             break
+        elif key == ord('i'):
+            laser_offset_y -= CAL_STEP
+            print(f"[CAL] OFFSET = ({laser_offset_x}, {laser_offset_y})")
+        elif key == ord('k'):
+            laser_offset_y += CAL_STEP
+            print(f"[CAL] OFFSET = ({laser_offset_x}, {laser_offset_y})")
+        elif key == ord('j'):
+            laser_offset_x -= CAL_STEP
+            print(f"[CAL] OFFSET = ({laser_offset_x}, {laser_offset_y})")
+        elif key == ord('l'):
+            laser_offset_x += CAL_STEP
+            print(f"[CAL] OFFSET = ({laser_offset_x}, {laser_offset_y})")
+        elif key == ord('r'):
+            laser_offset_x = 0
+            laser_offset_y = 0
+            print(f"[CAL] OFFSET reset = (0, 0)")
 
 finally:
-    laser.cleanup()
-    cam.release()
+    set_laser(False)
+    send("x")
+    time.sleep(0.2)
+    ser.close()
+    pipeline.stop()
     cv2.destroyAllWindows()
