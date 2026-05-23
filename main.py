@@ -2,7 +2,6 @@ import cv2
 import time
 import serial
 import numpy as np
-import pyrealsense2 as rs
 
 from detector import MouseDetector
 from config import DET_PERSIST_FRAMES, DET_CONF
@@ -15,11 +14,24 @@ ser = serial.Serial(PORT, BAUD, timeout=0.1)
 ser.setDTR(False)
 time.sleep(2)
 
-# ================= REALSENSE =================
-pipeline = rs.pipeline()
-config = rs.config()
-config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
-pipeline.start(config)
+# ================= WEBCAM (OBSBOT Meet SE - UVC) =================
+# Cam này là webcam UVC thường, KHÔNG phải RealSense -> dùng OpenCV.
+CAM_INDEX = 0   # nếu không mở được, thử 1, 2...
+FRAME_W = 640
+FRAME_H = 480
+
+cap = cv2.VideoCapture(CAM_INDEX, cv2.CAP_V4L2)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_W)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_H)
+cap.set(cv2.CAP_PROP_FPS, 30)
+# Giảm buffer để frame không bị trễ (lag) - quan trọng cho tracking
+cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+if not cap.isOpened():
+    raise RuntimeError(
+        f"Khong mo duoc webcam o index {CAM_INDEX}. "
+        f"Thu doi CAM_INDEX sang 1, 2... hoac chay 'ls /dev/video*' de xem."
+    )
 
 # ================= YOLO =================
 detector = MouseDetector()
@@ -169,12 +181,10 @@ try:
     print("[INFO] RealSense + YOLO tracking ready. ESC de thoat.")
 
     while True:
-        frames = pipeline.wait_for_frames()
-        color_frame = frames.get_color_frame()
-        if not color_frame:
+        ret, frame = cap.read()
+        if not ret or frame is None:
+            print("[WARN] Khong doc duoc frame, thu lai...")
             continue
-
-        frame = np.asanyarray(color_frame.get_data())
         h, w = frame.shape[:2]
         frame_cx = w // 2
         frame_cy = h // 2
@@ -320,5 +330,5 @@ finally:
     send("x")
     time.sleep(0.2)
     ser.close()
-    pipeline.stop()
+    cap.release()
     cv2.destroyAllWindows()
