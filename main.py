@@ -1,36 +1,78 @@
 import cv2
 import time
 import serial
+import serial.tools.list_ports
 import numpy as np
+import sys
+import glob
 
 from detector import MouseDetector
 from config import DET_PERSIST_FRAMES, DET_CONF
 
+IS_WINDOWS = sys.platform.startswith("win")
+
 # ================= SERIAL ARDUINO =================
-PORT = "/dev/ttyUSB0"
 BAUD = 9600
+
+def find_arduino_port():
+    """Tu dong tim Arduino tren ca Windows va Linux."""
+    # Windows: tim COMx co mo ta "Arduino", "USB-SERIAL", "CH340", "USB Serial"
+    if IS_WINDOWS:
+        ports = list(serial.tools.list_ports.comports())
+        # Uu tien: ten chua "Arduino" / "CH340" / "USB-SERIAL"
+        for p in ports:
+            desc = (p.description or "").lower()
+            if any(k in desc for k in ("arduino", "ch340", "usb-serial", "usb serial", "ftdi")):
+                return p.device
+        # Fallback: COM port dau tien
+        if ports:
+            return ports[0].device
+        return None
+    # Linux/macOS: /dev/ttyUSB* hoac /dev/ttyACM*
+    candidates = sorted(glob.glob("/dev/ttyACM*") + glob.glob("/dev/ttyUSB*"))
+    return candidates[0] if candidates else None
+
+
+PORT = find_arduino_port()
+if PORT is None:
+    raise RuntimeError(
+        "Khong tim thay Arduino. "
+        "Windows: kiem tra Device Manager (Ports COM). "
+        "Linux: chay 'ls /dev/ttyUSB* /dev/ttyACM*'."
+    )
+print(f"[INFO] Arduino port: {PORT}")
 
 ser = serial.Serial(PORT, BAUD, timeout=0.1)
 ser.setDTR(False)
 time.sleep(2)
 
-# ================= WEBCAM (OBSBOT Meet SE - UVC) =================
-# Cam này là webcam UVC thường, KHÔNG phải RealSense -> dùng OpenCV.
-CAM_INDEX = 0   # nếu không mở được, thử 1, 2...
+# ================= WEBCAM =================
+CAM_INDEX = 0   # neu khong mo duoc, thu 1, 2...
 FRAME_W = 640
 FRAME_H = 480
 
-cap = cv2.VideoCapture(CAM_INDEX, cv2.CAP_V4L2)
+# Chon backend phu hop cho tung HE
+if IS_WINDOWS:
+    CAM_BACKEND = cv2.CAP_DSHOW   # DirectShow tren Windows (nhanh, on dinh)
+else:
+    CAM_BACKEND = cv2.CAP_V4L2    # V4L2 tren Linux
+
+cap = cv2.VideoCapture(CAM_INDEX, CAM_BACKEND)
+if not cap.isOpened():
+    # Fallback: thu backend mac dinh (CAP_ANY)
+    print(f"[WARN] Backend chuyen biet that bai, thu CAP_ANY...")
+    cap = cv2.VideoCapture(CAM_INDEX, cv2.CAP_ANY)
+
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_W)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_H)
 cap.set(cv2.CAP_PROP_FPS, 30)
-# Giảm buffer để frame không bị trễ (lag) - quan trọng cho tracking
 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
 if not cap.isOpened():
     raise RuntimeError(
         f"Khong mo duoc webcam o index {CAM_INDEX}. "
-        f"Thu doi CAM_INDEX sang 1, 2... hoac chay 'ls /dev/video*' de xem."
+        f"Thu doi CAM_INDEX sang 1, 2... "
+        f"({'Windows: kiem tra trong Device Manager > Cameras' if IS_WINDOWS else 'Linux: chay ls /dev/video*'})"
     )
 
 # ================= YOLO =================

@@ -1,0 +1,17 @@
+# Thu vien Python can thiet cho Windows
+# Cai bang: pip install -r requirements_windows.txt
+
+# ===== CORE =====
+opencv-python>=4.8.0
+numpy
+pyserial
+ultralytics>=8.1.0
+
+# ===== TORCH (CPU - du de chay YOLO inference) =====
+# Neu muon dung GPU NVIDIA, xem: https://pytorch.org/get-started/locally/
+torch
+torchvision
+
+# ===== TUY CHON =====
+# Neu dung RealSense (depth):
+# pyrealsense2
