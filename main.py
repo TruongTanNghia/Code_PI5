@@ -16,16 +16,26 @@ BAUD = 9600
 
 def find_arduino_port():
     """Tu dong tim Arduino tren ca Windows va Linux."""
-    # Windows: tim COMx co mo ta "Arduino", "USB-SERIAL", "CH340", "USB Serial"
     if IS_WINDOWS:
         ports = list(serial.tools.list_ports.comports())
-        # Uu tien: ten chua "Arduino" / "CH340" / "USB-SERIAL"
+        # Bo qua COM1 (cong noi bo Windows, khong bao gio la Arduino)
+        ports = [p for p in ports if p.device.upper() != "COM1"]
+
+        # In ra tat ca cong de debug
+        print("[INFO] Cac cong COM tim thay:")
+        for p in ports:
+            print(f"   {p.device}: {p.description}")
+
+        # Uu tien: ten chua "Arduino" / "CH340" / "USB-SERIAL" / "FTDI"
         for p in ports:
             desc = (p.description or "").lower()
-            if any(k in desc for k in ("arduino", "ch340", "usb-serial", "usb serial", "ftdi")):
+            if any(k in desc for k in ("arduino", "ch340", "ch9102", "usb-serial",
+                                       "usb serial", "ftdi", "silicon labs", "cp210")):
                 return p.device
-        # Fallback: COM port dau tien
+
+        # Khong tim thay match -> lay COM khac COM1 dau tien
         if ports:
+            print(f"[WARN] Khong nhan ra Arduino, dung tam COM dau tien: {ports[0].device}")
             return ports[0].device
         return None
     # Linux/macOS: /dev/ttyUSB* hoac /dev/ttyACM*
@@ -37,7 +47,7 @@ PORT = find_arduino_port()
 if PORT is None:
     raise RuntimeError(
         "Khong tim thay Arduino. "
-        "Windows: kiem tra Device Manager (Ports COM). "
+        "Windows: kiem tra Device Manager (Ports COM) - phai co cong COM3 tro len. "
         "Linux: chay 'ls /dev/ttyUSB* /dev/ttyACM*'."
     )
 print(f"[INFO] Arduino port: {PORT}")
@@ -47,33 +57,51 @@ ser.setDTR(False)
 time.sleep(2)
 
 # ================= WEBCAM =================
-CAM_INDEX = 0   # neu khong mo duoc, thu 1, 2...
 FRAME_W = 640
 FRAME_H = 480
 
-# Chon backend phu hop cho tung HE
+# Backend phu hop tung HE
 if IS_WINDOWS:
-    CAM_BACKEND = cv2.CAP_DSHOW   # DirectShow tren Windows (nhanh, on dinh)
+    BACKENDS = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY]
 else:
-    CAM_BACKEND = cv2.CAP_V4L2    # V4L2 tren Linux
+    BACKENDS = [cv2.CAP_V4L2, cv2.CAP_ANY]
 
-cap = cv2.VideoCapture(CAM_INDEX, CAM_BACKEND)
-if not cap.isOpened():
-    # Fallback: thu backend mac dinh (CAP_ANY)
-    print(f"[WARN] Backend chuyen biet that bai, thu CAP_ANY...")
-    cap = cv2.VideoCapture(CAM_INDEX, cv2.CAP_ANY)
+
+def try_open_camera():
+    """Thu mo webcam o nhieu index + nhieu backend cho den khi work."""
+    for idx in range(0, 10):
+        for backend in BACKENDS:
+            cap = cv2.VideoCapture(idx, backend)
+            if not cap.isOpened():
+                cap.release()
+                continue
+            # Phai doc duoc frame thuc te
+            ok, frame = cap.read()
+            if ok and frame is not None and frame.size > 0:
+                backend_name = {
+                    cv2.CAP_DSHOW: "DSHOW",
+                    cv2.CAP_MSMF: "MSMF",
+                    cv2.CAP_V4L2: "V4L2",
+                    cv2.CAP_ANY: "ANY",
+                }.get(backend, str(backend))
+                print(f"[INFO] Webcam OK: index={idx}, backend={backend_name}, "
+                      f"frame={frame.shape}")
+                return cap
+            cap.release()
+    return None
+
+
+cap = try_open_camera()
+if cap is None:
+    raise RuntimeError(
+        "Khong mo duoc webcam nao tren cac index 0-9. "
+        f"({'Windows: kiem tra Device Manager > Cameras, dam bao webcam khong bi ung dung khac chiem' if IS_WINDOWS else 'Linux: ls /dev/video*'})"
+    )
 
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_W)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_H)
 cap.set(cv2.CAP_PROP_FPS, 30)
 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-
-if not cap.isOpened():
-    raise RuntimeError(
-        f"Khong mo duoc webcam o index {CAM_INDEX}. "
-        f"Thu doi CAM_INDEX sang 1, 2... "
-        f"({'Windows: kiem tra trong Device Manager > Cameras' if IS_WINDOWS else 'Linux: chay ls /dev/video*'})"
-    )
 
 # ================= YOLO =================
 detector = MouseDetector()
