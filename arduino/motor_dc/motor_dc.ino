@@ -24,8 +24,7 @@
  *  Laser / khac:
  *    'L' = bat laser     'K' = tat laser
  *    'x' = dung het + tat laser
- *
- *  (Van giu tuong thich lenh cu a/d/h/w/s/v neu can, xem cuoi file)
+ *    '?' = in trang thai 4 cong tac hanh trinh (DE TEST)
  *
  * Stepper chay lien tuc & MUOT theo toc do nhan duoc, tu dung khi cham limit.
  */
@@ -60,9 +59,28 @@ unsigned long tilt_last_us = 0;
 bool pan_pin_state  = false;
 bool tilt_pin_state = false;
 
+// ===== TEST LIMIT: tu dong in trang thai khi co cong tac doi =====
+// Bat/tat bang lenh: '+' = bat tu dong in, '-' = tat. Mac dinh tat.
+bool auto_report = false;
+int prevL0 = -1, prevL1 = -1, prevL2 = -1, prevL3 = -1;
+
 // Doc so nguyen (co the am) tu serial cho lenh P/T
 long readLong() {
   return Serial.parseInt();  // doc so, tu xu ly dau '-'
+}
+
+// In trang thai 4 cong tac
+void reportLimits() {
+  int s0 = digitalRead(LIM_PAN_NEG);
+  int s1 = digitalRead(LIM_PAN_POS);
+  int s2 = digitalRead(LIM_TILT_NEG);
+  int s3 = digitalRead(LIM_TILT_POS);
+
+  Serial.print("A0 ngang-trai: "); Serial.print(s0 == LOW ? "NHAN" : "nha ");
+  Serial.print(" | A1 ngang-phai: "); Serial.print(s1 == LOW ? "NHAN" : "nha ");
+  Serial.print(" | A2 doc-tren: ");   Serial.print(s2 == LOW ? "NHAN" : "nha ");
+  Serial.print(" | A3 doc-duoi: ");   Serial.print(s3 == LOW ? "NHAN" : "nha ");
+  Serial.println();
 }
 
 void setup() {
@@ -110,8 +128,24 @@ void loop() {
       pan_sps = 0; tilt_sps = 0;
       digitalWrite(LASER, LOW);
     }
+    // ===== LENH TEST LIMIT SWITCH =====
+    else if (c == '?') { Serial.read(); reportLimits(); }       // in 1 lan ngay
+    else if (c == '+') { Serial.read(); auto_report = true;  }  // bat auto in
+    else if (c == '-') { Serial.read(); auto_report = false; }  // tat auto in
     else {
       Serial.read();  // bo ky tu rac (xuong dong, khoang trang...)
+    }
+  }
+
+  // ===== Auto-report: in khi co cong tac doi trang thai =====
+  if (auto_report) {
+    int s0 = digitalRead(LIM_PAN_NEG);
+    int s1 = digitalRead(LIM_PAN_POS);
+    int s2 = digitalRead(LIM_TILT_NEG);
+    int s3 = digitalRead(LIM_TILT_POS);
+    if (s0 != prevL0 || s1 != prevL1 || s2 != prevL2 || s3 != prevL3) {
+      reportLimits();
+      prevL0 = s0; prevL1 = s1; prevL2 = s2; prevL3 = s3;
     }
   }
 
