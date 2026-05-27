@@ -54,8 +54,10 @@ unsigned long tilt_last_us = 0;
 bool pan_pin_state  = false;
 bool tilt_pin_state = false;
 
-bool auto_report = false;
+bool auto_report = false;     // dang nguoi doc (test tay): '+'/'-'
+bool machine_report = false;  // dang may doc cho Python: 'M'/'N'
 int prevL0 = -1, prevL1 = -1, prevL2 = -1, prevL3 = -1;
+int prevM0 = -1, prevM1 = -1, prevM2 = -1, prevM3 = -1;
 
 long readLong() {
   return Serial.parseInt();
@@ -82,6 +84,17 @@ void reportLimits() {
   Serial.print(" | A1 XUONG: "); Serial.print(a1 ? "NHAN" : "nha ");
   Serial.print(" | A2 TRAI: ");  Serial.print(a2 ? "NHAN" : "nha ");
   Serial.print(" | A3 PHAI: ");  Serial.print(a3 ? "NHAN" : "nha ");
+  Serial.println();
+}
+
+// Gui trang thai dang MAY DOC cho Python: "LIM:up,down,left,right"
+// Thu tu: A0=len(tilt-), A1=xuong(tilt+), A2=trai(pan-), A3=phai(pan+)
+void reportLimitsMachine() {
+  Serial.print("LIM:");
+  Serial.print(limitHit(A0) ? 1 : 0); Serial.print(",");
+  Serial.print(limitHit(A1) ? 1 : 0); Serial.print(",");
+  Serial.print(limitHit(A2) ? 1 : 0); Serial.print(",");
+  Serial.print(limitHit(A3) ? 1 : 0);
   Serial.println();
 }
 
@@ -134,10 +147,12 @@ void loop() {
     else if (c == '?') { Serial.read(); reportLimits(); }
     else if (c == '+') { Serial.read(); auto_report = true;  }
     else if (c == '-') { Serial.read(); auto_report = false; }
+    else if (c == 'M') { Serial.read(); machine_report = true;  reportLimitsMachine(); }
+    else if (c == 'N') { Serial.read(); machine_report = false; }
     else { Serial.read(); }
   }
 
-  // ===== Auto-report =====
+  // ===== Auto-report (nguoi doc, test tay) =====
   if (auto_report) {
     int s0 = limitHit(A0) ? 1 : 0;
     int s1 = limitHit(A1) ? 1 : 0;
@@ -146,6 +161,18 @@ void loop() {
     if (s0 != prevL0 || s1 != prevL1 || s2 != prevL2 || s3 != prevL3) {
       reportLimits();
       prevL0 = s0; prevL1 = s1; prevL2 = s2; prevL3 = s3;
+    }
+  }
+
+  // ===== Machine-report (cho Python doc) =====
+  if (machine_report) {
+    int m0 = limitHit(A0) ? 1 : 0;
+    int m1 = limitHit(A1) ? 1 : 0;
+    int m2 = limitHit(A2) ? 1 : 0;
+    int m3 = limitHit(A3) ? 1 : 0;
+    if (m0 != prevM0 || m1 != prevM1 || m2 != prevM2 || m3 != prevM3) {
+      reportLimitsMachine();
+      prevM0 = m0; prevM1 = m1; prevM2 = m2; prevM3 = m3;
     }
   }
 
