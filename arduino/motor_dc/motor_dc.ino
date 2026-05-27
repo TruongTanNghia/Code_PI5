@@ -9,14 +9,12 @@
  *
  *  LASER = D7
  *
- *  LIMIT SWITCH (chan chung noi 5V, nhan -> chan A doc HIGH):
- *    Ngang trai  = A0
+ *  LIMIT SWITCH (chan chung noi GND, dung INPUT_PULLUP):
+ *    Ngang trai  = A0      nhan -> doc LOW
  *    Ngang phai  = A1
  *    Doc tren    = A2
  *    Doc duoi    = A3
- *  !!! UNO khong co pull-down -> chan co the nhieu khi chua nhan.
- *      Code da loc nhieu bang phan mem (debounce + doc nhieu lan).
- *      Neu van nhieu -> gan tro 10k tu moi chan A xuong GND.
+ *    Moi cong tac: 1 chan -> A0..A3, chan chung -> GND. KHONG can dien tro.
  *
  * ====== GIAO THUC LENH (tu Python) ======
  *  "P<so>\n" -> toc do PAN  (>0 phai, <0 trai, =0 dung), |so|=step/s
@@ -58,15 +56,14 @@ long readLong() {
   return Serial.parseInt();
 }
 
-// ===== DOC LIMIT (noi 5V): nhan = HIGH =====
-// Loc nhieu: doc 5 lan, chi tra ve "nhan" (true) khi CA 5 lan deu HIGH.
-// Vi UNO khong co pull-down nen can loc de tranh bao gia.
+// ===== DOC LIMIT (noi GND + PULLUP): nhan = LOW =====
+// Loc nhieu nhe: doc 3 lan, ca 3 deu LOW moi tinh la nhan.
 bool limitHit(int pin) {
-  for (int i = 0; i < 5; i++) {
-    if (digitalRead(pin) == LOW) return false;  // co 1 lan LOW -> chua nhan
+  for (int i = 0; i < 3; i++) {
+    if (digitalRead(pin) == HIGH) return false;  // co 1 lan HIGH -> chua nhan
     delayMicroseconds(50);
   }
-  return true;  // ca 5 lan deu HIGH -> dang nhan that
+  return true;  // ca 3 lan LOW -> nhan that
 }
 
 // In trang thai 4 cong tac
@@ -92,11 +89,11 @@ void setup() {
   pinMode(TILT_DIR, OUTPUT);
   pinMode(LASER, OUTPUT);
 
-  // Chan chung noi 5V -> dung INPUT thuong (KHONG pullup, vi pullup se luon HIGH)
-  pinMode(LIM_PAN_NEG, INPUT);
-  pinMode(LIM_PAN_POS, INPUT);
-  pinMode(LIM_TILT_NEG, INPUT);
-  pinMode(LIM_TILT_POS, INPUT);
+  // Chan chung noi GND -> dung INPUT_PULLUP (chuan, chong nhieu)
+  pinMode(LIM_PAN_NEG, INPUT_PULLUP);
+  pinMode(LIM_PAN_POS, INPUT_PULLUP);
+  pinMode(LIM_TILT_NEG, INPUT_PULLUP);
+  pinMode(LIM_TILT_POS, INPUT_PULLUP);
 
   digitalWrite(PAN_STEP, LOW);
   digitalWrite(TILT_STEP, LOW);
@@ -149,7 +146,7 @@ void loop() {
 
   unsigned long now = micros();
 
-  // ===== PAN: dung khi cham limit huong do (nhan = HIGH) =====
+  // ===== PAN: dung khi cham limit huong do =====
   long pan_abs = labs(pan_sps);
   bool pan_blocked = (pan_sps < 0 && limitHit(LIM_PAN_NEG)) ||
                      (pan_sps > 0 && limitHit(LIM_PAN_POS));
