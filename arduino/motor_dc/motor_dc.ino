@@ -32,10 +32,15 @@
 #define LASER      7
 
 // ===== CHAN LIMIT SWITCH =====
-#define LIM_PAN_NEG   A0   // trai
-#define LIM_PAN_POS   A1   // phai
-#define LIM_TILT_NEG  A2   // tren
-#define LIM_TILT_POS  A3   // duoi
+// Da doi cho khop thuc te dau day cua phen:
+//   A0 = cong tac LEN   (tilt am)
+//   A1 = cong tac XUONG (tilt duong)
+//   A2 = cong tac TRAI  (pan am)
+//   A3 = cong tac PHAI  (pan duong)
+#define LIM_TILT_NEG  A0   // len
+#define LIM_TILT_POS  A1   // xuong
+#define LIM_PAN_NEG   A2   // trai
+#define LIM_PAN_POS   A3   // phai
 
 // ===== GIOI HAN TOC DO =====
 const long MAX_SPS = 4000;
@@ -57,26 +62,26 @@ long readLong() {
 }
 
 // ===== DOC LIMIT (noi GND + PULLUP): nhan = LOW =====
-// Loc nhieu nhe: doc 3 lan, ca 3 deu LOW moi tinh la nhan.
+// Loc nhieu RAT NHE de cong tac nhay (cham phat an lien).
+// Doc 2 lan cach nhau 20us, ca 2 LOW moi tinh nhan.
 bool limitHit(int pin) {
-  for (int i = 0; i < 3; i++) {
-    if (digitalRead(pin) == HIGH) return false;  // co 1 lan HIGH -> chua nhan
-    delayMicroseconds(50);
-  }
-  return true;  // ca 3 lan LOW -> nhan that
+  if (digitalRead(pin) == HIGH) return false;
+  delayMicroseconds(20);
+  if (digitalRead(pin) == HIGH) return false;
+  return true;
 }
 
-// In trang thai 4 cong tac
+// In trang thai 4 cong tac (theo dung chan vat ly A0-A3)
 void reportLimits() {
-  bool h0 = limitHit(LIM_PAN_NEG);
-  bool h1 = limitHit(LIM_PAN_POS);
-  bool h2 = limitHit(LIM_TILT_NEG);
-  bool h3 = limitHit(LIM_TILT_POS);
+  bool a0 = limitHit(A0);
+  bool a1 = limitHit(A1);
+  bool a2 = limitHit(A2);
+  bool a3 = limitHit(A3);
 
-  Serial.print("A0 ngang-trai: "); Serial.print(h0 ? "NHAN" : "nha ");
-  Serial.print(" | A1 ngang-phai: "); Serial.print(h1 ? "NHAN" : "nha ");
-  Serial.print(" | A2 doc-tren: ");   Serial.print(h2 ? "NHAN" : "nha ");
-  Serial.print(" | A3 doc-duoi: ");   Serial.print(h3 ? "NHAN" : "nha ");
+  Serial.print("A0 LEN: ");    Serial.print(a0 ? "NHAN" : "nha ");
+  Serial.print(" | A1 XUONG: "); Serial.print(a1 ? "NHAN" : "nha ");
+  Serial.print(" | A2 TRAI: ");  Serial.print(a2 ? "NHAN" : "nha ");
+  Serial.print(" | A3 PHAI: ");  Serial.print(a3 ? "NHAN" : "nha ");
   Serial.println();
 }
 
@@ -134,10 +139,10 @@ void loop() {
 
   // ===== Auto-report =====
   if (auto_report) {
-    int s0 = limitHit(LIM_PAN_NEG)  ? 1 : 0;
-    int s1 = limitHit(LIM_PAN_POS)  ? 1 : 0;
-    int s2 = limitHit(LIM_TILT_NEG) ? 1 : 0;
-    int s3 = limitHit(LIM_TILT_POS) ? 1 : 0;
+    int s0 = limitHit(A0) ? 1 : 0;
+    int s1 = limitHit(A1) ? 1 : 0;
+    int s2 = limitHit(A2) ? 1 : 0;
+    int s3 = limitHit(A3) ? 1 : 0;
     if (s0 != prevL0 || s1 != prevL1 || s2 != prevL2 || s3 != prevL3) {
       reportLimits();
       prevL0 = s0; prevL1 = s1; prevL2 = s2; prevL3 = s3;
