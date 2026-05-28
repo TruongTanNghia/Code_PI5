@@ -30,13 +30,14 @@ class MouseDetector:
     Tương thích ngược với main.py cũ (vẫn có box/center/conf).
     """
 
-    def __init__(self, model_path="best_seg_ncnn_model", conf=DET_CONF, imgsz=320):
+    def __init__(self, model_path="best_seg.pt", conf=DET_CONF, imgsz=320):
         # model_path:
-        #   - "best_seg_ncnn_model"  -> NCNN (NHANH NHAT tren Pi, export truoc)
+        #   - "best_seg.pt"          -> PyTorch goc (dung duoc ngay, may Windows OK)
+        #   - "best_seg_ncnn_model"  -> NCNN (nhanh hon tren Pi, phai export truoc:
+        #                               yolo export model=best_seg.pt format=ncnn imgsz=320)
         #   - "best_seg.onnx"        -> ONNX (nhanh vua)
-        #   - "best_seg.pt"          -> PyTorch goc (CHAM nhat tren Pi)
-        # imgsz: kich thuoc input. 320 nhanh gap ~4 lan so voi 640, do chinh xac giam chut.
-        #   Thu 320 truoc, neu detect kem thi tang len 416 hoac 512.
+        # imgsz: kich thuoc input. 320 nhanh, 416/512/640 chinh xac hon nhung cham hon.
+        #   May Windows manh thi co the de 640 cho detect tot.
         self.model = YOLO(model_path)
         self.conf = conf
         self.imgsz = imgsz
