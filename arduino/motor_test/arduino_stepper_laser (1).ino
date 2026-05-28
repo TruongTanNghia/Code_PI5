@@ -1,45 +1,99 @@
 /*
- * TEST RIENG MOTOR STEPPER (HBS57) - KHONG CAN PYTHON
- *
- * Muc dich: kiem tra phan cung motor + driver co chay khong.
- * Nap code nay vao, motor se TU DONG quay qua lai, khong can gui lenh gi.
+ * 2 STEPPER closed-loop HBS57 (STEP/DIR) + 4 limit switch + laser
  *
  * ====== DAU DAY ======
- *  PAN  (ngang): STEP=D2, DIR=D3
- *  TILT (doc)  : STEP=D5, DIR=D6
- *  Driver HBS57:
- *    PUL+ -> 5V Arduino
- *    PUL- -> D2 (pan) / D5 (tilt)
- *    DIR+ -> 5V Arduino
- *    DIR- -> D3 (pan) / D6 (tilt)
+ *  PAN  (ngang): STEP=D2, DIR=D3   -> HBS57 #1 (PUL-, DIR-)
+ *  TILT (doc)  : STEP=D5, DIR=D6   -> HBS57 #2 (PUL-, DIR-)
+ *  PUL+/DIR+ cua ca 2 driver -> 5V Arduino
+ *  LASER = D7
  *
- *  !!! QUAN TRONG: neu co module trung gian giua Arduino va driver
- *      -> THAO RA, noi THANG Arduino vao driver de test.
+ *  LIMIT SWITCH (chan chung noi GND, INPUT_PULLUP, nhan=LOW):
+ *    A0 = LEN (tilt-)   A1 = XUONG (tilt+)
+ *    A2 = TRAI (pan-)   A3 = PHAI  (pan+)
  *
- * ====== HOAT DONG ======
- *  Motor PAN  quay phai 1 giay -> dung 0.5s -> quay trai 1 giay -> dung 0.5s -> lap
- *  Motor TILT lam tuong tu, lech pha
- *  Serial in trang thai de theo doi (mo Serial Monitor 9600).
+ * ====== GIAO THUC LENH (tu Python) ======
+ *  "P<so>\n" -> toc do PAN  (>0 phai, <0 trai, =0 dung), |so|=step/s
+ *  "T<so>\n" -> toc do TILT (>0 xuong, <0 len, =0 dung)
+ *  'L'=bat laser  'K'=tat laser  'x'=dung het+tat laser
+ *  '?'=in limit 1 lan  '+'/'-'=auto in (nguoi doc)  'M'/'N'=auto in (may doc)
  *
- *  Neu motor KHONG quay:
- *   - Xem den driver co nhay khi motor "dang quay" trong log khong
- *   - Kiem tra DIP: SW7=off, SW8=on (cho motor 57)
- *   - Kiem tra day A+/A-/B+/B- motor
- *   - Thao module trung gian, noi thang
+ *  !!! QUAN TRONG: KHONG dung Serial.parseInt() vi no BLOCK 1 giay
+ *      -> motor bi khung/giat. Thay bang parser non-blocking ben duoi.
  */
 
 #define PAN_STEP   2
 #define PAN_DIR    3
 #define TILT_STEP  5
 #define TILT_DIR   6
-#define LED_BUILTIN_PIN 13   // den on-board de bao Arduino dang chay
+#define LASER      7
 
-// Toc do: nua chu ky xung (microseconds). Lon hon = cham hon, chac hon.
-// 500us ~ 1000 step/s (cham, de motor chay chac khi test).
-unsigned int STEP_HALF_US = 500;
+#define LIM_TILT_NEG  A0   // len
+#define LIM_TILT_POS  A1   // xuong
+#define LIM_PAN_NEG   A2   // trai
+#define LIM_PAN_POS   A3   // phai
 
-// So step quay moi luot (200 step = 1 vong neu 1.8 do/step, full step)
-long STEPS_PER_MOVE = 400;
+const long MAX_SPS = 4000;
+const long MIN_SPS = 150;
+
+long pan_sps  = 0;
+long tilt_sps = 0;
+
+unsigned long pan_last_us  = 0;
+unsigned long tilt_last_us = 0;
+bool pan_pin_state  = false;
+bool tilt_pin_state = false;
+
+bool auto_report = false;
+bool machine_report = false;
+int prevL0=-1, prevL1=-1, prevL2=-1, prevL3=-1;
+int prevM0=-1, prevM1=-1, prevM2=-1, prevM3=-1;
+
+// ===== PARSER NON-BLOCKING =====
+// Thu thap ky tu cua lenh so (P/T) ma KHONG cho timeout.
+// 'cmd_axis' = 'P' hoac 'T' khi dang doc so; 0 khi khong.
+char cmd_axis = 0;
+long cmd_val = 0;
+bool cmd_neg = false;
+bool cmd_has_digit = false;
+
+void applyCmd(char axis, long val) {
+  if (axis == 'P') {
+    pan_sps = constrain(val, -MAX_SPS, MAX_SPS);
+    if (pan_sps > 0) digitalWrite(PAN_DIR, HIGH);
+    else if (pan_sps < 0) digitalWrite(PAN_DIR, LOW);
+    Serial.print("OK PAN sps="); Serial.println(pan_sps);   // log xac nhan
+  } else if (axis == 'T') {
+    tilt_sps = constrain(val, -MAX_SPS, MAX_SPS);
+    if (tilt_sps > 0) digitalWrite(TILT_DIR, HIGH);
+    else if (tilt_sps < 0) digitalWrite(TILT_DIR, LOW);
+    Serial.print("OK TILT sps="); Serial.println(tilt_sps); // log xac nhan
+  }
+}
+
+// Doc limit: nhan = LOW. Loc nhieu nhe (2 lan).
+bool limitHit(int pin) {
+  if (digitalRead(pin) == HIGH) return false;
+  delayMicroseconds(20);
+  if (digitalRead(pin) == HIGH) return false;
+  return true;
+}
+
+void reportLimits() {
+  Serial.print("A0 LEN: ");    Serial.print(limitHit(A0) ? "NHAN" : "nha ");
+  Serial.print(" | A1 XUONG: "); Serial.print(limitHit(A1) ? "NHAN" : "nha ");
+  Serial.print(" | A2 TRAI: ");  Serial.print(limitHit(A2) ? "NHAN" : "nha ");
+  Serial.print(" | A3 PHAI: ");  Serial.print(limitHit(A3) ? "NHAN" : "nha ");
+  Serial.println();
+}
+
+void reportLimitsMachine() {
+  Serial.print("LIM:");
+  Serial.print(limitHit(A0) ? 1 : 0); Serial.print(",");
+  Serial.print(limitHit(A1) ? 1 : 0); Serial.print(",");
+  Serial.print(limitHit(A2) ? 1 : 0); Serial.print(",");
+  Serial.print(limitHit(A3) ? 1 : 0);
+  Serial.println();
+}
 
 void setup() {
   Serial.begin(9600);
@@ -48,51 +102,98 @@ void setup() {
   pinMode(PAN_DIR, OUTPUT);
   pinMode(TILT_STEP, OUTPUT);
   pinMode(TILT_DIR, OUTPUT);
-  pinMode(LED_BUILTIN_PIN, OUTPUT);
+  pinMode(LASER, OUTPUT);
+
+  pinMode(LIM_TILT_NEG, INPUT_PULLUP);
+  pinMode(LIM_TILT_POS, INPUT_PULLUP);
+  pinMode(LIM_PAN_NEG, INPUT_PULLUP);
+  pinMode(LIM_PAN_POS, INPUT_PULLUP);
 
   digitalWrite(PAN_STEP, LOW);
   digitalWrite(TILT_STEP, LOW);
+  digitalWrite(LASER, LOW);
 
-  Serial.println("=== TEST MOTOR STEPPER - TU DONG QUAY ===");
-  Serial.println("Motor se quay qua lai. Xem motor co quay + den driver co nhay khong.");
-  delay(1000);
-}
-
-// Quay 1 motor: phat 'steps' xung tren chan step
-void quay(int stepPin, int dirPin, bool chieu, long steps, const char* ten) {
-  digitalWrite(dirPin, chieu ? HIGH : LOW);
-  digitalWrite(LED_BUILTIN_PIN, HIGH);   // den sang khi dang quay
-  Serial.print(ten);
-  Serial.print(" quay ");
-  Serial.print(chieu ? "PHAI/XUONG" : "TRAI/LEN");
-  Serial.print(" (");
-  Serial.print(steps);
-  Serial.println(" steps)...");
-
-  for (long i = 0; i < steps; i++) {
-    digitalWrite(stepPin, HIGH);
-    delayMicroseconds(STEP_HALF_US);
-    digitalWrite(stepPin, LOW);
-    delayMicroseconds(STEP_HALF_US);
-  }
-  digitalWrite(LED_BUILTIN_PIN, LOW);    // den tat khi quay xong
+  Serial.println("ARDUINO READY - stepper v2 (non-blocking)");
 }
 
 void loop() {
-  // ===== TEST PAN =====
-  Serial.println("\n--- TEST MOTOR PAN (D2/D3) ---");
-  quay(PAN_STEP, PAN_DIR, true, STEPS_PER_MOVE, "PAN");   // phai
-  delay(500);
-  quay(PAN_STEP, PAN_DIR, false, STEPS_PER_MOVE, "PAN");  // trai
-  delay(1000);
+  // ===== Doc serial NON-BLOCKING tung ky tu mot =====
+  while (Serial.available()) {
+    char c = Serial.read();
 
-  // ===== TEST TILT =====
-  Serial.println("\n--- TEST MOTOR TILT (D5/D6) ---");
-  quay(TILT_STEP, TILT_DIR, true, STEPS_PER_MOVE, "TILT");  // xuong
-  delay(500);
-  quay(TILT_STEP, TILT_DIR, false, STEPS_PER_MOVE, "TILT"); // len
-  delay(1000);
+    // Neu dang doc so cho lenh P/T
+    if (cmd_axis != 0) {
+      if (c == '-') { cmd_neg = true; }
+      else if (c >= '0' && c <= '9') {
+        cmd_val = cmd_val * 10 + (c - '0');
+        cmd_has_digit = true;
+      }
+      else {
+        // ky tu ket thuc so (\n, space, hoac lenh moi) -> ap dung
+        if (cmd_has_digit) applyCmd(cmd_axis, cmd_neg ? -cmd_val : cmd_val);
+        cmd_axis = 0; cmd_val = 0; cmd_neg = false; cmd_has_digit = false;
+        // ky tu nay co the la lenh moi -> xu ly lai ben duoi
+        // (rot xuong phan xu ly lenh don)
+        if (c == 'P' || c == 'T') { cmd_axis = c; continue; }
+      }
+      continue;
+    }
 
-  Serial.println("\n=== Lap lai sau 2 giay ===");
-  delay(2000);
+    // Khong dang doc so -> xu ly lenh
+    if (c == 'P' || c == 'T') {
+      cmd_axis = c; cmd_val = 0; cmd_neg = false; cmd_has_digit = false;
+    }
+    else if (c == 'L') digitalWrite(LASER, HIGH);
+    else if (c == 'K') digitalWrite(LASER, LOW);
+    else if (c == 'x') { pan_sps = 0; tilt_sps = 0; digitalWrite(LASER, LOW); }
+    else if (c == '?') reportLimits();
+    else if (c == '+') auto_report = true;
+    else if (c == '-') auto_report = false;
+    else if (c == 'M') { machine_report = true; reportLimitsMachine(); }
+    else if (c == 'N') machine_report = false;
+    // ky tu khac bo qua
+  }
+
+  // ===== Auto-report nguoi doc =====
+  if (auto_report) {
+    int s0=limitHit(A0)?1:0, s1=limitHit(A1)?1:0, s2=limitHit(A2)?1:0, s3=limitHit(A3)?1:0;
+    if (s0!=prevL0||s1!=prevL1||s2!=prevL2||s3!=prevL3) {
+      reportLimits(); prevL0=s0; prevL1=s1; prevL2=s2; prevL3=s3;
+    }
+  }
+  // ===== Machine-report cho Python =====
+  if (machine_report) {
+    int m0=limitHit(A0)?1:0, m1=limitHit(A1)?1:0, m2=limitHit(A2)?1:0, m3=limitHit(A3)?1:0;
+    if (m0!=prevM0||m1!=prevM1||m2!=prevM2||m3!=prevM3) {
+      reportLimitsMachine(); prevM0=m0; prevM1=m1; prevM2=m2; prevM3=m3;
+    }
+  }
+
+  unsigned long now = micros();
+
+  // ===== PAN: phat xung, chan khi cham limit huong do =====
+  long pan_abs = labs(pan_sps);
+  bool pan_blocked = (pan_sps < 0 && limitHit(LIM_PAN_NEG)) ||
+                     (pan_sps > 0 && limitHit(LIM_PAN_POS));
+  if (pan_abs >= MIN_SPS && !pan_blocked) {
+    unsigned long half_us = 1000000UL / (2UL * pan_abs);
+    if (now - pan_last_us >= half_us) {
+      pan_pin_state = !pan_pin_state;
+      digitalWrite(PAN_STEP, pan_pin_state);
+      pan_last_us = now;
+    }
+  }
+
+  // ===== TILT =====
+  long tilt_abs = labs(tilt_sps);
+  bool tilt_blocked = (tilt_sps < 0 && limitHit(LIM_TILT_NEG)) ||
+                      (tilt_sps > 0 && limitHit(LIM_TILT_POS));
+  if (tilt_abs >= MIN_SPS && !tilt_blocked) {
+    unsigned long half_us = 1000000UL / (2UL * tilt_abs);
+    if (now - tilt_last_us >= half_us) {
+      tilt_pin_state = !tilt_pin_state;
+      digitalWrite(TILT_STEP, tilt_pin_state);
+      tilt_last_us = now;
+    }
+  }
 }
