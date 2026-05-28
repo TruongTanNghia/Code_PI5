@@ -232,7 +232,7 @@ laser_offset_y = LASER_OFFSET_Y
 
 
 try:
-    print("[INFO] RealSense + YOLO tracking ready. ESC de thoat.")
+    print("[INFO] Webcam + YOLO tracking ready. ESC de thoat.")
 
     while True:
         ret, frame = cap.read()
@@ -374,7 +374,7 @@ try:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             cv2.circle(frame, (w - 30, 30), 12, (0, 0, 255), -1)
 
-        cv2.imshow("Mouse Auto Tracking - RealSense", frame)
+        cv2.imshow("Mouse Auto Tracking", frame)
         key = cv2.waitKey(1) & 0xFF
         if key == 27:    # ESC
             break

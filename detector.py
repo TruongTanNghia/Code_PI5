@@ -1,8 +1,22 @@
 import cv2
 import numpy as np
+import torch
 from ultralytics import YOLO
 
 from config import DET_CONF
+
+# ===== FIX PyTorch 2.6+ weights_only =====
+# PyTorch 2.6 đổi mặc định weights_only=True -> không load được model YOLO.
+# Cho phép các class của ultralytics vào allowlist để torch.load chạy được.
+try:
+    from ultralytics.nn.tasks import (
+        SegmentationModel, DetectionModel, PoseModel, ClassificationModel,
+    )
+    torch.serialization.add_safe_globals([
+        SegmentationModel, DetectionModel, PoseModel, ClassificationModel,
+    ])
+except Exception as e:
+    print("[WARN] khong them duoc safe_globals:", e)
 
 
 class MouseDetector:
@@ -16,13 +30,20 @@ class MouseDetector:
     Tương thích ngược với main.py cũ (vẫn có box/center/conf).
     """
 
-    def __init__(self, model_path="best_seg.pt", conf=DET_CONF):
+    def __init__(self, model_path="best_seg_ncnn_model", conf=DET_CONF, imgsz=320):
+        # model_path:
+        #   - "best_seg_ncnn_model"  -> NCNN (NHANH NHAT tren Pi, export truoc)
+        #   - "best_seg.onnx"        -> ONNX (nhanh vua)
+        #   - "best_seg.pt"          -> PyTorch goc (CHAM nhat tren Pi)
+        # imgsz: kich thuoc input. 320 nhanh gap ~4 lan so voi 640, do chinh xac giam chut.
+        #   Thu 320 truoc, neu detect kem thi tang len 416 hoac 512.
         self.model = YOLO(model_path)
         self.conf = conf
+        self.imgsz = imgsz
 
     def detect(self, frame):
         # verbose=False để khỏi spam log mỗi frame
-        results = self.model(frame, conf=self.conf, verbose=False)
+        results = self.model(frame, conf=self.conf, imgsz=self.imgsz, verbose=False)
         dets = []
 
         if not results:
