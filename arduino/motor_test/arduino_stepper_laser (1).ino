@@ -61,10 +61,12 @@ void applyCmd(char axis, long val) {
     pan_sps = constrain(val, -MAX_SPS, MAX_SPS);
     if (pan_sps > 0) digitalWrite(PAN_DIR, HIGH);
     else if (pan_sps < 0) digitalWrite(PAN_DIR, LOW);
+    Serial.print("OK PAN sps="); Serial.println(pan_sps);   // log xac nhan
   } else if (axis == 'T') {
     tilt_sps = constrain(val, -MAX_SPS, MAX_SPS);
     if (tilt_sps > 0) digitalWrite(TILT_DIR, HIGH);
     else if (tilt_sps < 0) digitalWrite(TILT_DIR, LOW);
+    Serial.print("OK TILT sps="); Serial.println(tilt_sps); // log xac nhan
   }
 }
 
@@ -110,6 +112,8 @@ void setup() {
   digitalWrite(PAN_STEP, LOW);
   digitalWrite(TILT_STEP, LOW);
   digitalWrite(LASER, LOW);
+
+  Serial.println("ARDUINO READY - stepper v2 (non-blocking)");
 }
 
 void loop() {
