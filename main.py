@@ -133,23 +133,21 @@ class Scanner:
 
     def compute(self, now, lim_pan_neg, lim_pan_pos, lim_tilt_neg, lim_tilt_pos):
         """
-        Tinh toc do pan/tilt de quet, co xet limit.
-        Tra ve (pan_sps, tilt_sps).
-        - Cham limit huong dang quet -> lat chieu + nhich tilt.
-        - Cham ca 2 limit tilt -> lat chieu tilt.
+        Tinh toc do pan/tilt de quet.
+        - Cham limit huong dang quet -> LAT CHIEU (tu quay nguoc lai).
+        - Khi lat chieu pan -> kich tilt nhich len/xuong 1 chut.
+        - Cham limit tilt dang nhich -> lat chieu tilt.
         """
         self.active = True
 
-        # ===== PAN: cham limit huong dang di -> lat chieu, kich tilt nhich =====
+        # ===== PAN: cham limit huong dang di -> lat chieu =====
         if (self.pan_dir > 0 and lim_pan_pos) or (self.pan_dir < 0 and lim_pan_neg):
             self.pan_dir = -self.pan_dir
-            self.tilt_nudge_until = now + SCAN_TILT_STEP_TIME
+            self.tilt_nudge_until = now + SCAN_TILT_STEP_TIME  # tilt nhich 1 buoc
             self.last_flip_t = now
 
-        # Toc do pan: neu van cham limit huong da lat -> ep 0
+        # Sau khi lat, huong moi nguoc lai -> KHONG con cham limit -> chay binh thuong
         pan_sps = SCAN_PAN_SPS * self.pan_dir
-        if (pan_sps > 0 and lim_pan_pos) or (pan_sps < 0 and lim_pan_neg):
-            pan_sps = 0
 
         # ===== TILT: dang trong cua so nhich? =====
         if now < self.tilt_nudge_until:
@@ -157,9 +155,6 @@ class Scanner:
             if (self.tilt_dir > 0 and lim_tilt_pos) or (self.tilt_dir < 0 and lim_tilt_neg):
                 self.tilt_dir = -self.tilt_dir
             tilt_sps = SCAN_TILT_SPS * self.tilt_dir
-            # Neu van con cham limit -> ep 0
-            if (tilt_sps > 0 and lim_tilt_pos) or (tilt_sps < 0 and lim_tilt_neg):
-                tilt_sps = 0
         else:
             tilt_sps = 0
 
@@ -417,26 +412,27 @@ try:
 
         # ===== Điều khiển motor: BAM hoac QUET =====
         if target_found:
-            # Co target -> bam theo, tat scanner
+            # Co target -> bam theo, tat scanner.
+            # CHAN LIMIT chac kep (Arduino chan cung + Python chan mem)
+            # de motor khong vuot qua gioi han -> bao ve phan cung.
             scanner.on_target_found()
             axis_x.update(dx, send_raw, force_stop=False,
                           block_pos=lim_pan_pos, block_neg=lim_pan_neg)
             axis_y.update(dy, send_raw, force_stop=False,
                           block_pos=lim_tilt_pos, block_neg=lim_tilt_neg)
         else:
-            # Mat target -> co the chuyen sang quet sau SCAN_START_DELAY
+            # Mat target -> chuyen sang quet sau SCAN_START_DELAY.
             scanner.on_target_lost()
             if scanner.should_scan():
-                # Dang quet: gui toc do scan, co chan limit (cham limit thi lat chieu)
+                # Scanner TU XU LY limit (lat chieu khi cham) -> KHONG block_pos/neg
+                # de motor co the quay nguoc lai. Arduino van chan cung an toan.
                 pan_scan, tilt_scan = scanner.compute(
                     time.time(),
                     lim_pan_neg, lim_pan_pos,
                     lim_tilt_neg, lim_tilt_pos,
                 )
-                axis_x.send_sps(pan_scan, send_raw,
-                                block_pos=lim_pan_pos, block_neg=lim_pan_neg)
-                axis_y.send_sps(tilt_scan, send_raw,
-                                block_pos=lim_tilt_pos, block_neg=lim_tilt_neg)
+                axis_x.send_sps(pan_scan, send_raw)   # KHONG block
+                axis_y.send_sps(tilt_scan, send_raw)  # KHONG block
             else:
                 # Vua moi mat target, cho them chut moi quet -> tam dung
                 axis_x.send_sps(0, send_raw)
