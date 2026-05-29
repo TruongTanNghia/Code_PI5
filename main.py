@@ -412,9 +412,9 @@ try:
 
         # ===== Điều khiển motor: BAM hoac QUET =====
         if target_found:
-            # Co target -> bam theo, tat scanner.
-            # CHAN LIMIT chac kep (Arduino chan cung + Python chan mem)
-            # de motor khong vuot qua gioi han -> bao ve phan cung.
+            # Co target -> bam theo. Bao Arduino BAT che do TRACK (chan cung limit).
+            if scanner.active or scanner.lost_since is not None:
+                send_raw("F")  # F = Follow/track mode -> chan limit
             scanner.on_target_found()
             axis_x.update(dx, send_raw, force_stop=False,
                           block_pos=lim_pan_pos, block_neg=lim_pan_neg)
@@ -424,15 +424,17 @@ try:
             # Mat target -> chuyen sang quet sau SCAN_START_DELAY.
             scanner.on_target_lost()
             if scanner.should_scan():
-                # Scanner TU XU LY limit (lat chieu khi cham) -> KHONG block_pos/neg
-                # de motor co the quay nguoc lai. Arduino van chan cung an toan.
+                # Lan dau vao quet -> bao Arduino TAT chan limit (S = Scan mode)
+                if not scanner.active:
+                    send_raw("S")
+                # Scanner TU XU LY limit (lat chieu khi cham)
                 pan_scan, tilt_scan = scanner.compute(
                     time.time(),
                     lim_pan_neg, lim_pan_pos,
                     lim_tilt_neg, lim_tilt_pos,
                 )
-                axis_x.send_sps(pan_scan, send_raw)   # KHONG block
-                axis_y.send_sps(tilt_scan, send_raw)  # KHONG block
+                axis_x.send_sps(pan_scan, send_raw)
+                axis_y.send_sps(tilt_scan, send_raw)
             else:
                 # Vua moi mat target, cho them chut moi quet -> tam dung
                 axis_x.send_sps(0, send_raw)
