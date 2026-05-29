@@ -31,8 +31,8 @@
 
 #define LIM_TILT_NEG  A0   // len
 #define LIM_TILT_POS  A1   // xuong
-#define LIM_PAN_NEG   A2   // trai
-#define LIM_PAN_POS   A3   // phai
+#define LIM_PAN_NEG   A3   // trai (da doi: A3 thuc te la TRAI)
+#define LIM_PAN_POS   A2   // phai (da doi: A2 thuc te la PHAI)
 
 const long MAX_SPS = 4000;
 const long MIN_SPS = 150;
@@ -86,20 +86,22 @@ bool limitHit(int pin) {
   return true;
 }
 
+// In trang thai limit theo NGU NGHIA (LEN/XUONG/TRAI/PHAI), khong phai chan vat ly
 void reportLimits() {
-  Serial.print("A0 LEN: ");    Serial.print(limitHit(A0) ? "NHAN" : "nha ");
-  Serial.print(" | A1 XUONG: "); Serial.print(limitHit(A1) ? "NHAN" : "nha ");
-  Serial.print(" | A2 TRAI: ");  Serial.print(limitHit(A2) ? "NHAN" : "nha ");
-  Serial.print(" | A3 PHAI: ");  Serial.print(limitHit(A3) ? "NHAN" : "nha ");
+  Serial.print("LEN: ");     Serial.print(limitHit(LIM_TILT_NEG) ? "NHAN" : "nha ");
+  Serial.print(" | XUONG: "); Serial.print(limitHit(LIM_TILT_POS) ? "NHAN" : "nha ");
+  Serial.print(" | TRAI: ");  Serial.print(limitHit(LIM_PAN_NEG)  ? "NHAN" : "nha ");
+  Serial.print(" | PHAI: ");  Serial.print(limitHit(LIM_PAN_POS)  ? "NHAN" : "nha ");
   Serial.println();
 }
 
+// Gui cho Python theo thu tu Python quy uoc: tilt_neg, tilt_pos, pan_neg, pan_pos
 void reportLimitsMachine() {
   Serial.print("LIM:");
-  Serial.print(limitHit(A0) ? 1 : 0); Serial.print(",");
-  Serial.print(limitHit(A1) ? 1 : 0); Serial.print(",");
-  Serial.print(limitHit(A2) ? 1 : 0); Serial.print(",");
-  Serial.print(limitHit(A3) ? 1 : 0);
+  Serial.print(limitHit(LIM_TILT_NEG) ? 1 : 0); Serial.print(",");  // LEN
+  Serial.print(limitHit(LIM_TILT_POS) ? 1 : 0); Serial.print(",");  // XUONG
+  Serial.print(limitHit(LIM_PAN_NEG)  ? 1 : 0); Serial.print(",");  // TRAI
+  Serial.print(limitHit(LIM_PAN_POS)  ? 1 : 0);                     // PHAI
   Serial.println();
 }
 
