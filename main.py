@@ -271,7 +271,8 @@ lim_pan_pos = False
 _serial_buf = ""
 
 def poll_limits():
-    """Doc cac dong Arduino gui, cap nhat trang thai limit. Khong block."""
+    """Doc cac dong Arduino gui, cap nhat trang thai limit. Khong block.
+    Cac dong khac (MODE:, OK ..., READY...) in ra console de debug."""
     global _serial_buf, lim_tilt_neg, lim_tilt_pos, lim_pan_neg, lim_pan_pos
     try:
         n = ser.in_waiting
@@ -283,6 +284,8 @@ def poll_limits():
         while "\n" in _serial_buf:
             line, _serial_buf = _serial_buf.split("\n", 1)
             line = line.strip()
+            if not line:
+                continue
             if line.startswith("LIM:"):
                 try:
                     parts = line[4:].split(",")
@@ -293,6 +296,9 @@ def poll_limits():
                     lim_pan_pos = bool(a3)
                 except Exception:
                     pass
+            else:
+                # Cac thong bao khac tu Arduino: MODE:, OK ..., READY...
+                print(f"[ARD] {line}")
 
 
 # ================= LASER =================
