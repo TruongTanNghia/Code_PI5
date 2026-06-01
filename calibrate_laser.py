@@ -73,8 +73,14 @@ except Exception as e:
 time.sleep(2)
 ser.reset_input_buffer()
 print(f"[OK] Da ket noi {PORT}.")
-print("Dung phim A/D/W/S jog motor. SPACE bat/tat laser.")
-print("1-9 = so buoc moi nhan. R=reset. 0=re-zero. ENTER=luu. Q=thoat.\n")
+
+# BAT LASER NGAY de Anh nhin chom do va dieu chinh
+ser.write(b"L")
+ser.flush()
+laser_on = True
+print("[OK] LASER da BAT (sang lien tuc).")
+print("Dung phim A/D/W/S jog motor cho laser chieu trung muc tieu.")
+print("1-9 = so buoc moi nhan. R=reset. 0=re-zero. ENTER=luu. SPACE=tat/bat laser. Q=thoat.\n")
 
 
 def send(s):
@@ -98,7 +104,7 @@ def jog(axis, steps):
 offset_pan = 0      # so buoc tich luy tu vi tri 0
 offset_tilt = 0
 step_per_press = 5  # so buoc moi lan nhan A/D/W/S, chinh bang 1-9
-laser_on = False
+# laser_on da set True o tren khi bat laser ngay
 
 # Load offset cu (neu co)
 if os.path.exists(CONFIG_FILE):
