@@ -52,7 +52,7 @@ except Exception as e:
 
 # ===== CONG =====
 if sys.platform.startswith("win"):
-    PORT = "COM3"
+    PORT = "COM5"
 else:
     PORT = "/dev/ttyUSB0"
 BAUD = 9600
