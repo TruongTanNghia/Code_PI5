@@ -1179,15 +1179,14 @@ try:
         # ===== Doc trang thai limit tu Arduino (chac kep) =====
         poll_limits()
 
-        # ===== FIRE STEP: neu dang ban (quay offset + ban + quay ve) thi skip tracking =====
+        # ===== LASER DON GIAN: chuot trong deadzone -> BAN, ra ngoai -> tat =====
+        # Khong tinh goc/offset nua. Tracking van chay binh thuong.
         target_in_deadzone = target_found and center_in_deadzone
-        is_firing = fire_step(target_in_deadzone)
+        set_laser(target_in_deadzone)
+        is_firing = False
 
-        # ===== Điều khiển motor: chi tracking khi KHONG dang ban =====
-        if is_firing:
-            # Khi dang ban, fire_step da gui lenh motor truc tiep -> khong lam gi them
-            pass
-        elif target_found:
+        # ===== Điều khiển motor =====
+        if target_found:
             # Co target -> bam theo. Chi gui F khi DOI MODE sang TRACK
             if _current_mode != "TRACK":
                 send_raw("F")
