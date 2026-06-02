@@ -614,8 +614,8 @@ detector = MouseDetector(conf=DET_CONF)  # dung nguong tu override o tren
 # ================= TRACKING CONFIG =================
 # Vùng "đứng yên" - vào trong vùng này thì motor dừng hẳn -> san sang BAN.
 # NHO -> tam camera trung sat tam chuot hon. LON -> motor de "dung han" hon.
-DEADZONE_X = 30
-DEADZONE_Y = 30
+DEADZONE_X = 12   # nho hon -> tam vang bam SAT cham do hon (cu 30 -> con cach ~14px)
+DEADZONE_Y = 12   # neu motor rung qua lai quanh tam -> tang len 15-18
 
 # ===== DAO CHIEU TRACKING =====
 # Neu camera quay NGUOC LAI so voi con chuot -> doi True<->False cho truc do.
@@ -702,9 +702,9 @@ MAX_ERROR_X = 450     # pixel: keo dai -> pan cham lai som hon khi gan tam
 MAX_ERROR_Y = 380     # pixel: tilt tuong tu
 
 PAN_MAX_SPS  = 1800   # ha tu 3500 -> 1800: cham hon, khong vot qua tam
-PAN_MIN_SPS  = 250    # tang tu 120 -> 250: bo manh hon vao tam (do thieu luc)
+PAN_MIN_SPS  = 160    # sat san Arduino (150): bo CHAM khi gan tam -> bam khit, it vot
 TILT_MAX_SPS = 1500   # tilt cham hon chut
-TILT_MIN_SPS = 200    # tang tu 100 -> 200
+TILT_MIN_SPS = 160    # sat san: bo cham khi gan tam
 
 # Chi gui lenh toc do moi khi thay doi du lon -> do spam serial.
 SPS_SEND_STEP = 60     # step/s: chenh nho hon nay thi khong gui lai
