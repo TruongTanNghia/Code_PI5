@@ -547,12 +547,23 @@ import numpy as np
 from detector import MouseDetector
 from config import DET_PERSIST_FRAMES, DET_CONF
 
+# ============= OVERRIDE NGUONG PHAT HIEN (uu tien hon config.py) =============
+# DET_CONF cang CAO -> can chac chan hon moi tinh la chuot (it nham, nhung
+# co the bo lo). Cang THAP -> de phat hien hon (nhung de nham vat khac).
+# Khuyen nghi: 0.5 - 0.7 cho ngoai canh thuc te.
+DET_CONF = 0.5             # <<< CHINH NGUONG TAI DAY (cu = 0.25, gio = 0.5)
+
+# So frame "nho" detection cu khi YOLO bo lo 1-2 frame (chong nhap nhay).
+# Cang LON -> bam on dinh hon, khong scan loan khi YOLO mat 1 vai frame.
+# Cang NHO -> phan ung nhanh khi chuot di mat (nhung dieu de scan loan).
+DET_PERSIST_FRAMES = 15    # <<< Tang tu mac dinh (thuong 5-10) len 15
+
 # ================= SERIAL ARDUINO =================
 # Windows: "COM3", "COM4"... (xem trong Device Manager > Ports)
 # Linux/Pi: "/dev/ttyUSB0", "/dev/ttyACM0"...
 import sys as _sys
 if _sys.platform.startswith("win"):
-    PORT = "COM5"          # <<< DOI sang COM that cua Arduino tren Windows
+    PORT = "COM3"          # <<< DOI sang COM that cua Arduino tren Windows
 else:
     PORT = "/dev/ttyUSB0"  # tren Raspberry Pi
 BAUD = 9600
@@ -591,7 +602,7 @@ if not cap.isOpened():
     )
 
 # ================= YOLO =================
-detector = MouseDetector()
+detector = MouseDetector(conf=DET_CONF)  # dung nguong tu override o tren
 
 # ================= TRACKING CONFIG =================
 # Vùng "đứng yên" - vào trong vùng này thì motor dừng hẳn -> san sang BAN.
@@ -663,7 +674,8 @@ SEND_THROTTLE = 0.02   # giay: toi thieu giua 2 lan gui cua 1 truc
 SCAN_PAN_SPS    = 800     # toc do pan luc quet (cham vua phai de detect kip)
 SCAN_TILT_SPS   = 600     # toc do tilt luc nhich len/xuong
 SCAN_TILT_STEP_TIME = 0.3 # giay: thoi gian nhich tilt moi khi doi chieu pan
-SCAN_START_DELAY = 0.5    # giay: cho bao lau khi mat target moi bat dau quet
+SCAN_START_DELAY = 2.0    # giay: doi LAU hon truoc khi quet (tu 0.5 -> 2.0)
+                          # giup khong scan loan khi YOLO nhap nhay 1-2 frame
 
 
 class Scanner:
