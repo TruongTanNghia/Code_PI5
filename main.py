@@ -617,6 +617,17 @@ detector = MouseDetector(conf=DET_CONF)  # dung nguong tu override o tren
 DEADZONE_X = 30
 DEADZONE_Y = 30
 
+# ===== DAO CHIEU TRACKING =====
+# Neu camera quay NGUOC LAI so voi con chuot -> doi True<->False cho truc do.
+#   INVERT_PAN  = lat chieu PAN  (trai/phai)
+#   INVERT_TILT = lat chieu TILT (len/xuong)
+# Cach chinh: chay main.py, dua chuot sang PHAI khung hinh.
+#   - Neu camera quay sang PHAI (dung) -> giu nguyen.
+#   - Neu camera quay sang TRAI (sai)  -> doi INVERT_PAN.
+# Tuong tu cho tilt: dua chuot XUONG duoi, camera phai cui XUONG.
+INVERT_PAN  = True    # hien tai dang dao (vi truoc dung dx = frame_cx - obj_cx)
+INVERT_TILT = False
+
 # ===== LASER FIRE CONFIG =====
 # Sau khi vao deadzone (tam cam vao tam chuot), motor quay them OFFSET buoc
 # de laser truc tiep chieu vao chuot, BAN 1 phat, roi quay nguoc lai.
@@ -1107,13 +1118,17 @@ try:
 
             target_found = True
 
-            # ===== ERROR THEO TÂM BOX vs AIM POINT (laser thực tế) =====
-            # Laser gắn lệch -> phải kéo tâm con chuột về điểm laser chiếu,
-            # KHÔNG phải về tâm frame.
-            # Dao dau dx (pan) de bam DUNG huong sau khi da dao PAN_DIR trong Arduino
-            # Giu nguyen dy (tilt vi tilt dang chay dung)
-            dx = frame_cx - obj_cx
+            # ===== ERROR THEO TÂM BOX vs TAM CAMERA =====
+            # Error TU NHIEN:
+            #   dx > 0 = chuot ben PHAI tam  -> can pan PHAI (sps duong)
+            #   dy > 0 = chuot phia DUOI tam -> can tilt XUONG (sps duong)
+            # Neu camera quay nguoc -> doi INVERT_PAN / INVERT_TILT o tren.
+            dx = obj_cx - frame_cx
             dy = obj_cy - frame_cy
+            if INVERT_PAN:
+                dx = -dx
+            if INVERT_TILT:
+                dy = -dy
 
             center_in_deadzone = (abs(dx) <= DEADZONE_X and abs(dy) <= DEADZONE_Y)
 
