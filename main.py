@@ -719,6 +719,14 @@ SCAN_TILT_STEP_TIME = 0.3 # giay: thoi gian nhich tilt moi khi doi chieu pan
 SCAN_START_DELAY = 2.0    # giay: doi LAU hon truoc khi quet (tu 0.5 -> 2.0)
                           # giup khong scan loan khi YOLO nhap nhay 1-2 frame
 
+# ===== QUET PAN THEO TOA DO (thay cong tac hanh trinh lo) =====
+# Pan dao chieu khi vi tri (so step uoc luong) vuot qua +/- PAN_SCAN_RANGE.
+# Vi tri = tich phan toc do theo thoi gian (Python tu dem), KHONG can cong tac.
+# Cong tac van dung de HIEU CHINH khi no co nhan (snap ve bien + dao chieu).
+# Luc khoi dong: vi tri = 0 = noi camera dang huong. Bam 'H' de set lai goc 0.
+PAN_SCAN_RANGE = 4000     # so step quet moi ben tu tam (tang/giam tuy co cau quay)
+USE_COORD_SCAN = True     # True = quet pan theo toa do; False = theo cong tac cu
+
 
 class Scanner:
     """
@@ -758,28 +766,41 @@ class Scanner:
             return False
         return (time.time() - self.lost_since) >= SCAN_START_DELAY
 
-    def compute(self, now, lim_pan_neg, lim_pan_pos, lim_tilt_neg, lim_tilt_pos):
+    def compute(self, now, lim_pan_neg, lim_pan_pos, lim_tilt_neg, lim_tilt_pos,
+                pan_pos=0.0):
         """
         Tinh toc do pan/tilt de quet.
-        Lat chieu theo LEVEL (muc): dang cham limit huong dang di -> LAT NGAY,
-        co cooldown 0.5s de motor kip ra khoi cong tac (khong lat lien tuc).
-        (Truoc dung edge-detect -> neu cong tac dinh LOW lien tuc thi khong co
-         canh moi -> khong lat -> ket cung. Level-trigger sua loi nay.)
+        PAN: neu USE_COORD_SCAN -> dao chieu theo TOA DO (pan_pos vs +/-RANGE),
+             cong tac chi de hieu chinh. Neu tat -> dung cong tac (level-trigger).
+        pan_pos: vi tri uoc luong cua truc pan (step), + = phai, - = trai.
         """
         self.active = True
 
-        # ===== PAN: dang cham limit huong dang di? -> lat ngay (level) =====
-        pan_touching = (self.pan_dir > 0 and lim_pan_pos) or \
-                       (self.pan_dir < 0 and lim_pan_neg)
-        if pan_touching and now >= self._pan_flip_lock_until:
+        flip = False
+        if USE_COORD_SCAN:
+            # ===== Dao chieu theo TOA DO =====
+            if self.pan_dir > 0 and pan_pos >= PAN_SCAN_RANGE:
+                flip = True
+            elif self.pan_dir < 0 and pan_pos <= -PAN_SCAN_RANGE:
+                flip = True
+            # Cong tac that co nhan -> cung dao (hieu chinh khi gan bien)
+            if not flip and now >= self._pan_flip_lock_until:
+                if (self.pan_dir > 0 and lim_pan_pos) or (self.pan_dir < 0 and lim_pan_neg):
+                    flip = True
+        else:
+            # ===== Dao chieu theo CONG TAC (level-trigger) =====
+            if now >= self._pan_flip_lock_until:
+                if (self.pan_dir > 0 and lim_pan_pos) or (self.pan_dir < 0 and lim_pan_neg):
+                    flip = True
+
+        if flip and now >= self._pan_flip_lock_until:
             self.pan_dir = -self.pan_dir
             self.tilt_nudge_until = now + SCAN_TILT_STEP_TIME
             self.last_flip_t = now
-            self._pan_flip_lock_until = now + 0.5   # cooldown: cho motor ra khoi cong tac
+            self._pan_flip_lock_until = now + 0.4
 
-        # Toc do pan theo huong (sau khi co the da lat)
         pan_sps = SCAN_PAN_SPS * self.pan_dir
-        # An toan: neu huong MOI van cham limit (ca 2 cong tac?) -> dung
+        # An toan tuyet doi: cong tac that dang nhan huong dang di -> dung
         if (self.pan_dir > 0 and lim_pan_pos) or (self.pan_dir < 0 and lim_pan_neg):
             pan_sps = 0
 
@@ -1083,6 +1104,10 @@ miss_count = 0
 prev_t = time.time()
 fps = 0.0
 
+# Vi tri uoc luong truc PAN (step). + = phai, - = trai. 0 = luc khoi dong.
+# Tich phan tu toc do: pan_pos += sps * dt moi vong loop.
+pan_pos_steps = 0.0
+
 # Theo doi mode hien tai de chi gui F/S khi DOI mode, khong spam
 _current_mode = None     # "TRACK" hoac "SCAN", None luc dau
 
@@ -1204,11 +1229,12 @@ try:
                 if _current_mode != "SCAN":
                     send_raw("S")
                     _current_mode = "SCAN"
-                # Scanner TU XU LY limit (lat chieu khi cham)
+                # Scanner: pan dao chieu theo TOA DO (pan_pos_steps)
                 pan_scan, tilt_scan = scanner.compute(
                     time.time(),
                     lim_pan_neg, lim_pan_pos,
                     lim_tilt_neg, lim_tilt_pos,
+                    pan_pos=pan_pos_steps,
                 )
                 axis_x.send_sps(pan_scan, send_raw)
                 axis_y.send_sps(tilt_scan, send_raw)
@@ -1240,6 +1266,17 @@ try:
         dt = now - prev_t
         if dt > 0:
             fps = 0.9 * fps + 0.1 * (1.0 / dt)
+
+        # ===== TICH PHAN VI TRI PAN (dem toa do) =====
+        # pan_pos += toc do thuc te dang chay * thoi gian. axis_x.current_sps co dau.
+        if dt > 0:
+            pan_pos_steps += axis_x.current_sps * dt
+        # Cong tac that nhan -> SNAP vi tri ve bien (hieu chinh troi tich phan)
+        if lim_pan_pos:               # cham cong tac chan-quay-phai (A2, ben TRAI vat ly)
+            pan_pos_steps = PAN_SCAN_RANGE
+        elif lim_pan_neg:             # cham cong tac chan-quay-trai (A3, ben PHAI vat ly)
+            pan_pos_steps = -PAN_SCAN_RANGE
+
         prev_t = now
 
         info = f"FPS: {fps:.1f} conf>={DET_CONF} det:{len(display_dets)}"
@@ -1248,7 +1285,8 @@ try:
 
         # Debug motor: toc do step/s dang gui
         dbg = (f"PAN sps={axis_x.current_sps}  "
-               f"TILT sps={axis_y.current_sps}")
+               f"TILT sps={axis_y.current_sps}  "
+               f"PANpos={int(pan_pos_steps)}/{PAN_SCAN_RANGE} [H=set 0]")
         cv2.putText(frame, dbg, (10, 80),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
 
@@ -1319,6 +1357,9 @@ try:
                       f"-> {AIM_OFFSET_FILE}")
             except Exception as _ew:
                 print(f"[AIM] luu that bai: {_ew}")
+        elif key == ord('h'):       # SET goc 0 cho truc pan (homing thu cong)
+            pan_pos_steps = 0.0
+            print(f"[PAN] da set vi tri hien tai = 0 (tam quet)")
 
 finally:
     set_laser(False)
