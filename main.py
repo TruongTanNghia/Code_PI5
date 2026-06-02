@@ -738,36 +738,27 @@ class Scanner:
     def compute(self, now, lim_pan_neg, lim_pan_pos, lim_tilt_neg, lim_tilt_pos):
         """
         Tinh toc do pan/tilt de quet.
-        Lat chieu theo CANH NHAN (edge): chi lat 1 lan khi limit chuyen tu nha->nhan.
-        Sau khi lat, lock 0.3s khong lat them.
+        Lat chieu theo LEVEL (muc): dang cham limit huong dang di -> LAT NGAY,
+        co cooldown 0.5s de motor kip ra khoi cong tac (khong lat lien tuc).
+        (Truoc dung edge-detect -> neu cong tac dinh LOW lien tuc thi khong co
+         canh moi -> khong lat -> ket cung. Level-trigger sua loi nay.)
         """
         self.active = True
 
-        # ===== PAN: phat hien CANH NHAN cua limit dang di vao =====
-        flip_now = False
-        if self.pan_dir > 0:
-            # dang di phai, cham limit chan-quay-phai (lim_pan_pos = cong tac TRAI vat ly)
-            if lim_pan_pos and not self._prev_lim_pan_pos and now >= self._pan_flip_lock_until:
-                flip_now = True
-        else:
-            # dang di trai, cham limit chan-quay-trai (lim_pan_neg = cong tac PHAI vat ly)
-            if lim_pan_neg and not self._prev_lim_pan_neg and now >= self._pan_flip_lock_until:
-                flip_now = True
-
-        if flip_now:
+        # ===== PAN: dang cham limit huong dang di? -> lat ngay (level) =====
+        pan_touching = (self.pan_dir > 0 and lim_pan_pos) or \
+                       (self.pan_dir < 0 and lim_pan_neg)
+        if pan_touching and now >= self._pan_flip_lock_until:
             self.pan_dir = -self.pan_dir
             self.tilt_nudge_until = now + SCAN_TILT_STEP_TIME
             self.last_flip_t = now
-            self._pan_flip_lock_until = now + 0.3   # cooldown 0.3s
+            self._pan_flip_lock_until = now + 0.5   # cooldown: cho motor ra khoi cong tac
 
-        # Update edge state
-        self._prev_lim_pan_pos = lim_pan_pos
-        self._prev_lim_pan_neg = lim_pan_neg
-
-        # Toc do pan: neu van con cham limit huong dang di -> ep 0 (cho qua lock)
+        # Toc do pan theo huong (sau khi co the da lat)
         pan_sps = SCAN_PAN_SPS * self.pan_dir
+        # An toan: neu huong MOI van cham limit (ca 2 cong tac?) -> dung
         if (self.pan_dir > 0 and lim_pan_pos) or (self.pan_dir < 0 and lim_pan_neg):
-            pan_sps = 0   # dung cho luc lock qua moi quay lai
+            pan_sps = 0
 
         # ===== TILT: dang trong cua so nhich? =====
         if now < self.tilt_nudge_until:
