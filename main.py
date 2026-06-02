@@ -724,8 +724,26 @@ SCAN_START_DELAY = 2.0    # giay: doi LAU hon truoc khi quet (tu 0.5 -> 2.0)
 # Vi tri = tich phan toc do theo thoi gian (Python tu dem), KHONG can cong tac.
 # Cong tac van dung de HIEU CHINH khi no co nhan (snap ve bien + dao chieu).
 # Luc khoi dong: vi tri = 0 = noi camera dang huong. Bam 'H' de set lai goc 0.
-PAN_SCAN_RANGE = 4000     # so step quet moi ben tu tam (tang/giam tuy co cau quay)
+PAN_SCAN_RANGE = 4000     # so step quet moi ben (mac dinh neu chua calibrate)
 USE_COORD_SCAN = True     # True = quet pan theo toa do; False = theo cong tac cu
+
+# Bien quet pan (step). Mac dinh doi xung +/- PAN_SCAN_RANGE.
+# Neu co file pan_range.txt (tao boi calibrate_pan.py) -> dung gia tri do.
+PAN_LIMIT_MIN = -PAN_SCAN_RANGE   # bien TRAI
+PAN_LIMIT_MAX = +PAN_SCAN_RANGE   # bien PHAI
+PAN_RANGE_FILE = "pan_range.txt"
+if _os2.path.exists(PAN_RANGE_FILE):
+    try:
+        with open(PAN_RANGE_FILE) as _fp:
+            _lo, _hi = _fp.read().strip().split(",")
+            PAN_LIMIT_MIN = int(_lo)
+            PAN_LIMIT_MAX = int(_hi)
+            print(f"[INFO] Loaded pan range: min={PAN_LIMIT_MIN}, max={PAN_LIMIT_MAX} step")
+    except Exception as _efp:
+        print(f"[WARN] khong doc duoc {PAN_RANGE_FILE}: {_efp}")
+else:
+    print(f"[INFO] Chua co {PAN_RANGE_FILE} -> dung mac dinh +/-{PAN_SCAN_RANGE}. "
+          f"Chay calibrate_pan.py de do chinh xac.")
 
 
 class Scanner:
@@ -778,10 +796,10 @@ class Scanner:
 
         flip = False
         if USE_COORD_SCAN:
-            # ===== Dao chieu theo TOA DO =====
-            if self.pan_dir > 0 and pan_pos >= PAN_SCAN_RANGE:
+            # ===== Dao chieu theo TOA DO (bien MIN/MAX tu calibrate) =====
+            if self.pan_dir > 0 and pan_pos >= PAN_LIMIT_MAX:
                 flip = True
-            elif self.pan_dir < 0 and pan_pos <= -PAN_SCAN_RANGE:
+            elif self.pan_dir < 0 and pan_pos <= PAN_LIMIT_MIN:
                 flip = True
             # Cong tac that co nhan -> cung dao (hieu chinh khi gan bien)
             if not flip and now >= self._pan_flip_lock_until:
@@ -1273,9 +1291,9 @@ try:
             pan_pos_steps += axis_x.current_sps * dt
         # Cong tac that nhan -> SNAP vi tri ve bien (hieu chinh troi tich phan)
         if lim_pan_pos:               # cham cong tac chan-quay-phai (A2, ben TRAI vat ly)
-            pan_pos_steps = PAN_SCAN_RANGE
+            pan_pos_steps = PAN_LIMIT_MAX
         elif lim_pan_neg:             # cham cong tac chan-quay-trai (A3, ben PHAI vat ly)
-            pan_pos_steps = -PAN_SCAN_RANGE
+            pan_pos_steps = PAN_LIMIT_MIN
 
         prev_t = now
 
@@ -1286,7 +1304,7 @@ try:
         # Debug motor: toc do step/s dang gui
         dbg = (f"PAN sps={axis_x.current_sps}  "
                f"TILT sps={axis_y.current_sps}  "
-               f"PANpos={int(pan_pos_steps)}/{PAN_SCAN_RANGE} [H=set 0]")
+               f"PANpos={int(pan_pos_steps)} [{PAN_LIMIT_MIN}..{PAN_LIMIT_MAX}] [H=set 0]")
         cv2.putText(frame, dbg, (10, 80),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
 
