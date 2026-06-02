@@ -444,38 +444,13 @@ void loop() {
 
   unsigned long now = micros();
 
-  // ===== PAN: 2 che do xu ly khi cham limit =====
-  // - TRACKING (safety_block=true) : TAM NGUNG huong cham, van quay duoc huong nguoc.
-  //   Khi chuot doi huong, Python gui lenh nguoc -> motor quay theo binh thuong.
-  // - SCAN (safety_block=false)    : DAO CHIEU NGAY (lat nguoc), khong kep.
-  if (pan_sps > 0 && limitHit(LIM_PAN_POS)) {
-    // quay phai cham cong tac TRAI vat ly
-    if (safety_block) {
-      // TRACKING: tam ngung. Khong di chuyen huong nay.
-      // (pan_sps giu nguyen, nhung khong phat xung -> dung tai cho)
-    } else {
-      // SCAN: dao chieu sang quay trai
-      pan_sps = -pan_sps;
-      digitalWrite(PAN_DIR, LOW);
-    }
-  } else if (pan_sps < 0 && limitHit(LIM_PAN_NEG)) {
-    // quay trai cham cong tac PHAI vat ly
-    if (safety_block) {
-      // TRACKING: tam ngung
-    } else {
-      // SCAN: dao chieu sang quay phai
-      pan_sps = -pan_sps;
-      digitalWrite(PAN_DIR, HIGH);
-    }
-  }
-
-  // Phat xung PAN: chi khi KHONG bi chan trong TRACKING mode
-  bool pan_blocked_track = safety_block && (
-                            (pan_sps > 0 && limitHit(LIM_PAN_POS)) ||
-                            (pan_sps < 0 && limitHit(LIM_PAN_NEG))
-                          );
+  // ===== PAN: cham limit -> DUNG huong do (ca TRACK va SCAN) =====
+  // Python (Scanner) tu lo lat chieu khi scan, dua tren trang thai LIM
+  // Arduino chi viec: huong nao cham limit thi khong phat xung huong do.
   long pan_abs = labs(pan_sps);
-  if (pan_abs >= MIN_SPS && !pan_blocked_track) {
+  bool pan_blocked = (pan_sps > 0 && limitHit(LIM_PAN_POS)) ||
+                     (pan_sps < 0 && limitHit(LIM_PAN_NEG));
+  if (pan_abs >= MIN_SPS && !pan_blocked) {
     unsigned long half_us = 1000000UL / (2UL * pan_abs);
     if (now - pan_last_us >= half_us) {
       pan_pin_state = !pan_pin_state;
