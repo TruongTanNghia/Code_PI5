@@ -795,13 +795,14 @@ class Scanner:
 
         flip = False
         if USE_COORD_SCAN:
-            # Dao chieu theo TOA DO (vung tuan tra)
+            # ===== QUET THUAN TUY THEO TOA DO - BO QUA CONG TAC =====
+            # (cong tac chap chon -> khong dung trong scan, tranh ket cung)
             if self.pan_dir > 0 and pan_pos >= PAN_LIMIT_MAX:
                 flip = True
             elif self.pan_dir < 0 and pan_pos <= PAN_LIMIT_MIN:
                 flip = True
-        # Cong tac that cham huong dang di -> cung dao (backup/hieu chinh)
-        if not flip:
+        else:
+            # Che do cu: dao theo cong tac
             if (self.pan_dir > 0 and lim_pan_pos) or (self.pan_dir < 0 and lim_pan_neg):
                 flip = True
 
@@ -811,10 +812,12 @@ class Scanner:
             self.last_flip_t = now
             self._pan_flip_lock_until = now + 0.4
 
+        # LUON di chuyen (khong bao gio ep 0 trong che do toa do -> khong ket)
         pan_sps = SCAN_PAN_SPS * self.pan_dir
-        # An toan: cong tac that dang nhan huong dang di -> dung
-        if (self.pan_dir > 0 and lim_pan_pos) or (self.pan_dir < 0 and lim_pan_neg):
-            pan_sps = 0
+        if not USE_COORD_SCAN:
+            # Chi che do cu moi chan theo cong tac
+            if (self.pan_dir > 0 and lim_pan_pos) or (self.pan_dir < 0 and lim_pan_neg):
+                pan_sps = 0
 
         # ===== TILT: dang trong cua so nhich? =====
         if now < self.tilt_nudge_until:
@@ -1307,11 +1310,8 @@ try:
         # ===== DEM TOA DO PAN (tich phan toc do) =====
         if dt > 0:
             pan_pos_steps += axis_x.current_sps * dt
-        # Cong tac that nhan -> SNAP ve mep (hieu chinh troi)
-        if lim_pan_pos:
-            pan_pos_steps = PAN_LIMIT_MAX
-        elif lim_pan_neg:
-            pan_pos_steps = PAN_LIMIT_MIN
+        # KHONG snap theo cong tac nua (cong tac chap chon lam pin toa do -> ket).
+        # Neu sau nay cong tac on dinh, co the bat lai snap o day.
 
         prev_t = now
 
