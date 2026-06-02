@@ -281,6 +281,30 @@
  *  'S'=mode SCAN  (KHONG chan limit, motor co the quay nguoc lai khi cham)
  */
 
+/*
+ * 2 STEPPER closed-loop HBS57 (STEP/DIR) + 4 limit switch + laser
+ *
+ * ====== DAU DAY ======
+ *  PAN  (ngang): STEP=D2, DIR=D3   -> HBS57 #1 (PUL-, DIR-)
+ *  TILT (doc)  : STEP=D5, DIR=D6   -> HBS57 #2 (PUL-, DIR-)
+ *  PUL+/DIR+ cua ca 2 driver -> 5V Arduino
+ *  LASER = A5 (active HIGH)
+ *
+ *  LIMIT SWITCH (chan chung GND, INPUT_PULLUP, nhan=LOW):
+ *    A0 = cong tac TREN vat ly  (chan tilt khi quay LEN)
+ *    A1 = cong tac DUOI vat ly  (chan tilt khi quay XUONG)
+ *    A2 = cong tac PHAI vat ly  (chan PAN khi quay TRAI - PAN DOI DIEN)
+ *    A3 = cong tac TRAI vat ly  (chan PAN khi quay PHAI - PAN DOI DIEN)
+ *
+ * ====== GIAO THUC LENH (tu Python) ======
+ *  "P<so>\n" -> toc do PAN  (>0 phai, <0 trai, =0 dung), |so|=step/s
+ *  "T<so>\n" -> toc do TILT (>0 xuong, <0 len, =0 dung)
+ *  'L'=bat laser  'K'=tat laser  'x'=dung het+tat laser
+ *  '?'=in limit 1 lan  '+'/'-'=auto in (nguoi doc)  'M'/'N'=auto in (may doc)
+ *  'F'=mode TRACK (chan cung cham limit, BAO VE phan cung) - MAC DINH
+ *  'S'=mode SCAN  (KHONG chan limit, motor co the quay nguoc lai khi cham)
+ */
+
 #define PAN_STEP   2
 #define PAN_DIR    3
 #define TILT_STEP  5
@@ -420,22 +444,38 @@ void loop() {
 
   unsigned long now = micros();
 
-  // ===== PAN: cham limit -> DAO CHIEU NGAY (khong dung) =====
-  // Quay phai (pan_sps>0) + cham cong tac TRAI vat ly (A3 = LIM_PAN_POS)
-  //   -> dao chieu thanh quay trai (-pan_sps)
-  // Quay trai (pan_sps<0) + cham cong tac PHAI vat ly (A2 = LIM_PAN_NEG)
-  //   -> dao chieu thanh quay phai (+pan_sps)
-  // Lam o CA tracking va scan (khong phu thuoc safety_block).
+  // ===== PAN: 2 che do xu ly khi cham limit =====
+  // - TRACKING (safety_block=true) : TAM NGUNG huong cham, van quay duoc huong nguoc.
+  //   Khi chuot doi huong, Python gui lenh nguoc -> motor quay theo binh thuong.
+  // - SCAN (safety_block=false)    : DAO CHIEU NGAY (lat nguoc), khong kep.
   if (pan_sps > 0 && limitHit(LIM_PAN_POS)) {
-    pan_sps = -pan_sps;
-    digitalWrite(PAN_DIR, LOW);   // pan_sps am -> DIR LOW
+    // quay phai cham cong tac TRAI vat ly
+    if (safety_block) {
+      // TRACKING: tam ngung. Khong di chuyen huong nay.
+      // (pan_sps giu nguyen, nhung khong phat xung -> dung tai cho)
+    } else {
+      // SCAN: dao chieu sang quay trai
+      pan_sps = -pan_sps;
+      digitalWrite(PAN_DIR, LOW);
+    }
   } else if (pan_sps < 0 && limitHit(LIM_PAN_NEG)) {
-    pan_sps = -pan_sps;
-    digitalWrite(PAN_DIR, HIGH);  // pan_sps duong -> DIR HIGH
+    // quay trai cham cong tac PHAI vat ly
+    if (safety_block) {
+      // TRACKING: tam ngung
+    } else {
+      // SCAN: dao chieu sang quay phai
+      pan_sps = -pan_sps;
+      digitalWrite(PAN_DIR, HIGH);
+    }
   }
 
+  // Phat xung PAN: chi khi KHONG bi chan trong TRACKING mode
+  bool pan_blocked_track = safety_block && (
+                            (pan_sps > 0 && limitHit(LIM_PAN_POS)) ||
+                            (pan_sps < 0 && limitHit(LIM_PAN_NEG))
+                          );
   long pan_abs = labs(pan_sps);
-  if (pan_abs >= MIN_SPS) {
+  if (pan_abs >= MIN_SPS && !pan_blocked_track) {
     unsigned long half_us = 1000000UL / (2UL * pan_abs);
     if (now - pan_last_us >= half_us) {
       pan_pin_state = !pan_pin_state;
