@@ -570,9 +570,15 @@ BAUD = 9600
 
 ser = serial.Serial(PORT, BAUD, timeout=0.1)
 ser.setDTR(False)
-time.sleep(2)
-ser.write(b"M")   # bat che do Arduino bao trang thai limit (LIM:...) cho Python
+time.sleep(2)                       # cho Arduino reset xong
+ser.reset_input_buffer()            # clear bo dem (bo cac dong READY ban dau)
+ser.write(b"M\n")                   # bat machine-report (LIM:...)
 ser.flush()
+time.sleep(0.1)
+ser.write(b"F\n")                   # mac dinh TRACK mode (chan cung cham limit)
+ser.flush()
+print(f"[INFO] Da gui M (machine-report) va F (track mode) toi Arduino.")
+print(f"[INFO] Anh quan sat terminal: phai thay '[ARD] LIM:...' khi cham cong tac.")
 
 # ================= WEBCAM (OBSBOT Meet SE - UVC) =================
 # Cam UVC thuong -> dung OpenCV. Tu chon backend theo HE DIEU HANH:
@@ -868,6 +874,10 @@ def poll_limits():
                 try:
                     parts = line[4:].split(",")
                     a0, a1, a2, a3 = (int(p) for p in parts[:4])
+                    new_state = (bool(a0), bool(a1), bool(a2), bool(a3))
+                    old_state = (lim_tilt_neg, lim_tilt_pos, lim_pan_neg, lim_pan_pos)
+                    if new_state != old_state:
+                        print(f"[LIM] LEN={a0} XUONG={a1} ngat-tr={a2} ngat-ph={a3}")
                     lim_tilt_neg = bool(a0)
                     lim_tilt_pos = bool(a1)
                     lim_pan_neg = bool(a2)
@@ -1000,7 +1010,9 @@ def fire_step(target_in_deadzone):
             fire_state = "idle"
             # Chua reset fire_already_in_dz -> phai cho target ra khoi deadzone
             # roi vao lai moi ban tiep
-        return True
+        # COOLDOWN KHONG block tracking -> motor di lai chuot ngay,
+        # khong khung sau khi ban (truoc day return True lam cam dung 0.5s)
+        return False
 
     return False
 
