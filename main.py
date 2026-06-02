@@ -641,7 +641,7 @@ LASER_OFFSET_TILT_STEPS = 0
 AIM_SPS = 1200
 
 # Thoi gian laser sang khi ban (giay)
-LASER_ON_TIME = 0.3
+LASER_ON_TIME = 3.0
 
 # Sau khi ban xong, doi bao lau roi moi cho ban tiep lan nua (giay)
 # (giua 2 phat ban, chuot phai ra khoi deadzone roi vao lai)
