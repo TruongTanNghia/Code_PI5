@@ -628,6 +628,29 @@ DEADZONE_Y = 30
 INVERT_PAN  = False   # da test: chuot ben PHAI -> phai pan PHAI -> INVERT_PAN=False
 INVERT_TILT = False   # neu tilt nguoc (chuot duoi ma cam nguoc len) -> doi True
 
+# ===== DIEM NGAM LASER (AIM POINT) - offset pixel so voi TAM frame =====
+# Tam vang (crosshair) = noi laser THUC SU chieu len anh.
+# Tracking se keo TAM con chuot ve dung diem nay -> laser trung chuot.
+# CALIBRATE LUC CHAY: dung phim
+#   I = len, K = xuong, J = trai, L = phai  (dich tam vang)
+#   R = reset ve giua,  O = LUU offset ra file aim_offset.txt
+# Keo tam vang den khi NO TRUNG cham laser do that tren tuong, roi bam O de luu.
+AIM_OFFSET_FILE = "aim_offset.txt"
+AIM_OFFSET_X = 0      # se nap tu file neu co
+AIM_OFFSET_Y = 0
+AIM_CAL_STEP = 3      # moi lan bam phim dich bao nhieu pixel
+
+import os as _os2
+if _os2.path.exists(AIM_OFFSET_FILE):
+    try:
+        with open(AIM_OFFSET_FILE) as _f2:
+            _ax, _ay = _f2.read().strip().split(",")
+            AIM_OFFSET_X = int(_ax)
+            AIM_OFFSET_Y = int(_ay)
+            print(f"[INFO] Loaded aim offset pixel: x={AIM_OFFSET_X}, y={AIM_OFFSET_Y}")
+    except Exception as _e2:
+        print(f"[WARN] khong doc duoc {AIM_OFFSET_FILE}: {_e2}")
+
 # ===== LASER FIRE CONFIG =====
 # Sau khi vao deadzone (tam cam vao tam chuot), motor quay them OFFSET buoc
 # de laser truc tiep chieu vao chuot, BAN 1 phat, roi quay nguoc lai.
@@ -1075,6 +1098,9 @@ try:
         h, w = frame.shape[:2]
         frame_cx = w // 2
         frame_cy = h // 2
+        # Diem ngam laser = tam frame + offset pixel (calibrate bang phim I/J/K/L)
+        aim_x = frame_cx + AIM_OFFSET_X
+        aim_y = frame_cy + AIM_OFFSET_Y
 
         detections = detector.detect(frame)
 
@@ -1114,8 +1140,8 @@ try:
             #   dx > 0 = chuot ben PHAI tam  -> can pan PHAI (sps duong)
             #   dy > 0 = chuot phia DUOI tam -> can tilt XUONG (sps duong)
             # Neu camera quay nguoc -> doi INVERT_PAN / INVERT_TILT o tren.
-            dx = obj_cx - frame_cx
-            dy = obj_cy - frame_cy
+            dx = obj_cx - aim_x
+            dy = obj_cy - aim_y
             if INVERT_PAN:
                 dx = -dx
             if INVERT_TILT:
@@ -1141,7 +1167,7 @@ try:
 
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
             cv2.circle(frame, (obj_cx, obj_cy), 5, (0, 0, 255), -1)
-            cv2.line(frame, (frame_cx, frame_cy),
+            cv2.line(frame, (aim_x, aim_y),
                      (obj_cx, obj_cy), (255, 255, 0), 2)
             cv2.putText(
                 frame,
@@ -1198,14 +1224,14 @@ try:
         dz_color = (0, 255, 0) if (target_found and center_in_deadzone) else (255, 255, 255)
         cv2.rectangle(
             frame,
-            (frame_cx - DEADZONE_X, frame_cy - DEADZONE_Y),
-            (frame_cx + DEADZONE_X, frame_cy + DEADZONE_Y),
+            (aim_x - DEADZONE_X, aim_y - DEADZONE_Y),
+            (aim_x + DEADZONE_X, aim_y + DEADZONE_Y),
             dz_color, 1
         )
 
         # Crosshair vàng đánh dấu AIM POINT (vị trí laser thực tế)
         # Khi calibrate đúng, crosshair này phải trùng với chấm laser thật trên frame.
-        cv2.drawMarker(frame, (frame_cx, frame_cy), (0, 255, 255),
+        cv2.drawMarker(frame, (aim_x, aim_y), (0, 255, 255),
                        markerType=cv2.MARKER_CROSS, markerSize=20, thickness=2)
         # Chấm xanh dương = tâm frame thật (tham chiếu)
         cv2.circle(frame, (frame_cx, frame_cy), 3, (255, 0, 0), -1)
@@ -1259,10 +1285,41 @@ try:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             cv2.circle(frame, (w - 30, 30), 12, (0, 0, 255), -1)
 
+        # ===== Hien huong dan calibrate tam ngam =====
+        cv2.putText(frame,
+                    f"AIM offset x={AIM_OFFSET_X} y={AIM_OFFSET_Y}  "
+                    f"[I/K=len/xuong J/L=trai/phai R=reset O=luu]",
+                    (10, h - 40),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
+
         cv2.imshow("Mouse Auto Tracking", frame)
         key = cv2.waitKey(1) & 0xFF
         if key == 27:    # ESC
             break
+        elif key == ord('i'):       # tam vang LEN
+            AIM_OFFSET_Y -= AIM_CAL_STEP
+            print(f"[AIM] offset = ({AIM_OFFSET_X}, {AIM_OFFSET_Y})")
+        elif key == ord('k'):       # tam vang XUONG
+            AIM_OFFSET_Y += AIM_CAL_STEP
+            print(f"[AIM] offset = ({AIM_OFFSET_X}, {AIM_OFFSET_Y})")
+        elif key == ord('j'):       # tam vang TRAI
+            AIM_OFFSET_X -= AIM_CAL_STEP
+            print(f"[AIM] offset = ({AIM_OFFSET_X}, {AIM_OFFSET_Y})")
+        elif key == ord('l'):       # tam vang PHAI
+            AIM_OFFSET_X += AIM_CAL_STEP
+            print(f"[AIM] offset = ({AIM_OFFSET_X}, {AIM_OFFSET_Y})")
+        elif key == ord('r'):       # reset ve giua
+            AIM_OFFSET_X = 0
+            AIM_OFFSET_Y = 0
+            print(f"[AIM] offset reset = (0, 0)")
+        elif key == ord('o'):       # LUU ra file
+            try:
+                with open(AIM_OFFSET_FILE, "w") as _fw:
+                    _fw.write(f"{AIM_OFFSET_X},{AIM_OFFSET_Y}")
+                print(f"[AIM] DA LUU offset ({AIM_OFFSET_X}, {AIM_OFFSET_Y}) "
+                      f"-> {AIM_OFFSET_FILE}")
+            except Exception as _ew:
+                print(f"[AIM] luu that bai: {_ew}")
 
 finally:
     set_laser(False)
