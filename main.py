@@ -564,7 +564,7 @@ DET_PERSIST_FRAMES = 15    # <<< Tang tu mac dinh (thuong 5-10) len 15
 # Linux/Pi: "/dev/ttyUSB0", "/dev/ttyACM0"...
 import sys as _sys
 if _sys.platform.startswith("win"):
-    PORT = "COM3"          # <<< DOI sang COM that cua Arduino tren Windows
+    PORT = "COM5"          # <<< DOI sang COM that cua Arduino tren Windows
 else:
     PORT = "/dev/ttyUSB0"  # tren Raspberry Pi
 BAUD = 9600
@@ -1110,7 +1110,9 @@ try:
             # ===== ERROR THEO TÂM BOX vs AIM POINT (laser thực tế) =====
             # Laser gắn lệch -> phải kéo tâm con chuột về điểm laser chiếu,
             # KHÔNG phải về tâm frame.
-            dx = obj_cx - frame_cx
+            # Dao dau dx (pan) de bam DUNG huong sau khi da dao PAN_DIR trong Arduino
+            # Giu nguyen dy (tilt vi tilt dang chay dung)
+            dx = frame_cx - obj_cx
             dy = obj_cy - frame_cy
 
             center_in_deadzone = (abs(dx) <= DEADZONE_X and abs(dy) <= DEADZONE_Y)
