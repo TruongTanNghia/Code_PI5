@@ -614,8 +614,8 @@ detector = MouseDetector(conf=DET_CONF)  # dung nguong tu override o tren
 # ================= TRACKING CONFIG =================
 # Vùng "đứng yên" - vào trong vùng này thì motor dừng hẳn -> san sang BAN.
 # NHO -> tam camera trung sat tam chuot hon. LON -> motor de "dung han" hon.
-DEADZONE_X = 40   # TANG de chong LAC: motor dung han khi gan tam, khong rung qua lai
-DEADZONE_Y = 40   # neu van lac -> tang len 50; neu muon bam sat hon -> giam ve 25
+DEADZONE_X = 15   # nho -> tam vang bam SAT cham do. Neu lac qua -> tang len 20-25
+DEADZONE_Y = 15   # da co EMA lam muot nen giam deadzone van it lac
 
 # ===== DAO CHIEU TRACKING =====
 # Neu camera quay NGUOC LAI so voi con chuot -> doi True<->False cho truc do.
