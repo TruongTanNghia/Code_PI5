@@ -540,26 +540,25 @@
 #     cap.release()
 #     cv2.destroyAllWindows()
 
- · PY
 import cv2
 import time
 import serial
 import numpy as np
- 
+
 from detector import MouseDetector
 from config import DET_PERSIST_FRAMES, DET_CONF
- 
+
 # ============= OVERRIDE NGUONG PHAT HIEN (uu tien hon config.py) =============
 # DET_CONF cang CAO -> can chac chan hon moi tinh la chuot (it nham, nhung
 # co the bo lo). Cang THAP -> de phat hien hon (nhung de nham vat khac).
 # Khuyen nghi: 0.5 - 0.7 cho ngoai canh thuc te.
 DET_CONF = 0.5             # <<< CHINH NGUONG TAI DAY (cu = 0.25, gio = 0.5)
- 
+
 # So frame "nho" detection cu khi YOLO bo lo 1-2 frame (chong nhap nhay).
 # Cang LON -> bam on dinh hon, khong scan loan khi YOLO mat 1 vai frame.
 # Cang NHO -> phan ung nhanh khi chuot di mat (nhung dieu de scan loan).
 DET_PERSIST_FRAMES = 15    # <<< Tang tu mac dinh (thuong 5-10) len 15
- 
+
 # ================= SERIAL ARDUINO =================
 # Windows: "COM3", "COM4"... (xem trong Device Manager > Ports)
 # Linux/Pi: "/dev/ttyUSB0", "/dev/ttyACM0"...
@@ -569,7 +568,7 @@ if _sys.platform.startswith("win"):
 else:
     PORT = "/dev/ttyUSB0"  # tren Raspberry Pi
 BAUD = 9600
- 
+
 ser = serial.Serial(PORT, BAUD, timeout=0.1)
 ser.setDTR(False)
 time.sleep(2)                       # cho Arduino reset xong
@@ -581,7 +580,7 @@ ser.write(b"F\n")                   # mac dinh TRACK mode (chan cung cham limit)
 ser.flush()
 print(f"[INFO] Da gui M (machine-report) va F (track mode) toi Arduino.")
 print(f"[INFO] Anh quan sat terminal: phai thay '[ARD] LIM:...' khi cham cong tac.")
- 
+
 # ================= WEBCAM (OBSBOT Meet SE - UVC) =================
 # Cam UVC thuong -> dung OpenCV. Tu chon backend theo HE DIEU HANH:
 #   Windows -> CAP_DSHOW (hoac CAP_MSMF)
@@ -590,34 +589,34 @@ import sys
 CAM_INDEX = 0   # neu khong mo duoc, thu 1, 2...
 FRAME_W = 640
 FRAME_H = 480
- 
+
 if sys.platform.startswith("win"):
     cam_backend = cv2.CAP_DSHOW      # Windows
 else:
     cam_backend = cv2.CAP_V4L2       # Linux / Raspberry Pi
- 
+
 cap = cv2.VideoCapture(CAM_INDEX, cam_backend)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_W)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_H)
 cap.set(cv2.CAP_PROP_FPS, 30)
 # Giảm buffer để frame không bị trễ (lag) - quan trọng cho tracking
 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
- 
+
 if not cap.isOpened():
     raise RuntimeError(
         f"Khong mo duoc webcam o index {CAM_INDEX}. "
         f"Thu doi CAM_INDEX sang 1, 2..."
     )
- 
+
 # ================= YOLO =================
 detector = MouseDetector(conf=DET_CONF)  # dung nguong tu override o tren
- 
+
 # ================= TRACKING CONFIG =================
 # Vùng "đứng yên" - vào trong vùng này thì motor dừng hẳn -> san sang BAN.
 # NHO -> tam camera trung sat tam chuot hon. LON -> motor de "dung han" hon.
 DEADZONE_X = 30
 DEADZONE_Y = 30
- 
+
 # ===== LASER FIRE CONFIG =====
 # Sau khi vao deadzone (tam cam vao tam chuot), motor quay them OFFSET buoc
 # de laser truc tiep chieu vao chuot, BAN 1 phat, roi quay nguoc lai.
@@ -626,17 +625,17 @@ DEADZONE_Y = 30
 LASER_OFFSET_FILE = "laser_offset.txt"
 LASER_OFFSET_PAN_STEPS = 0    # se overwrite tu file neu co
 LASER_OFFSET_TILT_STEPS = 0
- 
+
 # Toc do step/s khi quay den vi tri ban (vua phai, dut khoat)
 AIM_SPS = 1200
- 
+
 # Thoi gian laser sang khi ban (giay)
 LASER_ON_TIME = 0.3
- 
+
 # Sau khi ban xong, doi bao lau roi moi cho ban tiep lan nua (giay)
 # (giua 2 phat ban, chuot phai ra khoi deadzone roi vao lai)
 FIRE_COOLDOWN = 0.5
- 
+
 # Load offset tu file (neu co)
 import os as _os
 if _os.path.exists(LASER_OFFSET_FILE):
@@ -654,8 +653,8 @@ else:
     print(f"[WARN] Khong tim thay {LASER_OFFSET_FILE}.")
     print(f"       Chay 'calibrate_laser.py' truoc de calibrate.")
     print(f"       Hien tai offset = (0, 0) -> laser se chieu vao TAM camera.")
- 
- 
+
+
 # ===== TOC DO STEPPER (step/s) =====
 # Khi vat o ngay mep deadzone -> chay cham (MIN_SPS).
 # Khi vat o xa (>= MAX_ERROR) -> chay nhanh (MAX_SPS).
@@ -667,16 +666,16 @@ else:
 # MIN_SPS NHO -> sat tam thi bo tung ti -> dung dung cho.
 MAX_ERROR_X = 450     # pixel: keo dai -> pan cham lai som hon khi gan tam
 MAX_ERROR_Y = 380     # pixel: tilt tuong tu
- 
+
 PAN_MAX_SPS  = 1800   # ha tu 3500 -> 1800: cham hon, khong vot qua tam
 PAN_MIN_SPS  = 250    # tang tu 120 -> 250: bo manh hon vao tam (do thieu luc)
 TILT_MAX_SPS = 1500   # tilt cham hon chut
 TILT_MIN_SPS = 200    # tang tu 100 -> 200
- 
+
 # Chi gui lenh toc do moi khi thay doi du lon -> do spam serial.
 SPS_SEND_STEP = 60     # step/s: chenh nho hon nay thi khong gui lai
 SEND_THROTTLE = 0.02   # giay: toi thieu giua 2 lan gui cua 1 truc
- 
+
 # ===== CHE DO QUET (khi khong thay muc tieu) =====
 # Quet hinh chu S: pan qua lai trai-phai, moi lan doi chieu thi tilt nhich 1 buoc.
 # Khi phat hien chuot lai -> tu dong dung quet, chuyen sang bam.
@@ -685,8 +684,8 @@ SCAN_TILT_SPS   = 600     # toc do tilt luc nhich len/xuong
 SCAN_TILT_STEP_TIME = 0.3 # giay: thoi gian nhich tilt moi khi doi chieu pan
 SCAN_START_DELAY = 2.0    # giay: doi LAU hon truoc khi quet (tu 0.5 -> 2.0)
                           # giup khong scan loan khi YOLO nhap nhay 1-2 frame
- 
- 
+
+
 class Scanner:
     """
     Quet hinh chu S de tim muc tieu.
@@ -708,23 +707,23 @@ class Scanner:
         self._prev_lim_tilt_neg = False
         # Cooldown sau khi lat -> 0.3s khong lat lai (tranh rung)
         self._pan_flip_lock_until = 0.0
- 
+
     def on_target_found(self):
         """Co target lai -> tat quet."""
         self.active = False
         self.lost_since = None
- 
+
     def on_target_lost(self):
         """Mat target -> chuan bi quet sau SCAN_START_DELAY giay."""
         if self.lost_since is None:
             self.lost_since = time.time()
- 
+
     def should_scan(self):
         """Co nen quet luc nay khong?"""
         if self.lost_since is None:
             return False
         return (time.time() - self.lost_since) >= SCAN_START_DELAY
- 
+
     def compute(self, now, lim_pan_neg, lim_pan_pos, lim_tilt_neg, lim_tilt_pos):
         """
         Tinh toc do pan/tilt de quet.
@@ -732,7 +731,7 @@ class Scanner:
         Sau khi lat, lock 0.3s khong lat them.
         """
         self.active = True
- 
+
         # ===== PAN: phat hien CANH NHAN cua limit dang di vao =====
         flip_now = False
         if self.pan_dir > 0:
@@ -743,22 +742,22 @@ class Scanner:
             # dang di trai, cham limit chan-quay-trai (lim_pan_neg = cong tac PHAI vat ly)
             if lim_pan_neg and not self._prev_lim_pan_neg and now >= self._pan_flip_lock_until:
                 flip_now = True
- 
+
         if flip_now:
             self.pan_dir = -self.pan_dir
             self.tilt_nudge_until = now + SCAN_TILT_STEP_TIME
             self.last_flip_t = now
             self._pan_flip_lock_until = now + 0.3   # cooldown 0.3s
- 
+
         # Update edge state
         self._prev_lim_pan_pos = lim_pan_pos
         self._prev_lim_pan_neg = lim_pan_neg
- 
+
         # Toc do pan: neu van con cham limit huong dang di -> ep 0 (cho qua lock)
         pan_sps = SCAN_PAN_SPS * self.pan_dir
         if (self.pan_dir > 0 and lim_pan_pos) or (self.pan_dir < 0 and lim_pan_neg):
             pan_sps = 0   # dung cho luc lock qua moi quay lai
- 
+
         # ===== TILT: dang trong cua so nhich? =====
         if now < self.tilt_nudge_until:
             # Cham limit huong tilt dang di -> lat chieu
@@ -767,20 +766,20 @@ class Scanner:
             tilt_sps = SCAN_TILT_SPS * self.tilt_dir
         else:
             tilt_sps = 0
- 
+
         return pan_sps, tilt_sps
- 
- 
+
+
 scanner = Scanner()
- 
- 
+
+
 class StepperAxis:
     """
     Dieu khien 1 truc stepper bang TOC DO (step/s).
     Tinh toc do ti le voi sai so -> chay muot, tu cham lai khi gan tam.
     Gui lenh "P<sps>\n" (pan) hoac "T<sps>\n" (tilt) toi Arduino.
     """
- 
+
     def __init__(self, axis_letter, deadzone, max_error,
                  max_sps, min_sps):
         self.axis = axis_letter        # 'P' cho pan, 'T' cho tilt
@@ -788,11 +787,11 @@ class StepperAxis:
         self.max_error = max_error
         self.max_sps = max_sps
         self.min_sps = min_sps
- 
+
         self.last_sps_sent = None
         self.last_send_t = 0.0
         self.current_sps = 0           # de debug
- 
+
     def _sps_from_error(self, error):
         """Tra ve toc do co dau (am/duong) theo huong va do lon sai so."""
         abs_err = abs(error)
@@ -805,12 +804,12 @@ class StepperAxis:
             mag = self.min_sps + (self.max_sps - self.min_sps) * ratio
         sps = int(mag)
         return sps if error > 0 else -sps
- 
+
     def update(self, error, send_raw, force_stop=False,
                block_pos=False, block_neg=False):
         now = time.time()
         sps = 0 if force_stop else self._sps_from_error(error)
- 
+
         # ===== CHAN KEP: neu da cham limit huong dang muon di -> ep dung huong do =====
         # block_pos: da cham limit phia duong (P/T > 0)
         # block_neg: da cham limit phia am   (P/T < 0)
@@ -818,9 +817,9 @@ class StepperAxis:
             sps = 0
         elif sps < 0 and block_neg:
             sps = 0
- 
+
         self.current_sps = sps
- 
+
         # Chi gui khi thay doi dang ke (hoac khi can dung han / khoi dong lai).
         changed_enough = (
             self.last_sps_sent is None
@@ -832,7 +831,7 @@ class StepperAxis:
             send_raw(f"{self.axis}{sps}\n")
             self.last_sps_sent = sps
             self.last_send_t = now
- 
+
     def send_sps(self, sps, send_raw,
                  block_pos=False, block_neg=False):
         """Gui toc do thang (dung cho Scanner). Co chan limit."""
@@ -843,7 +842,7 @@ class StepperAxis:
         elif sps < 0 and block_neg:
             sps = 0
         self.current_sps = sps
- 
+
         changed_enough = (
             self.last_sps_sent is None
             or (sps == 0 and self.last_sps_sent != 0)
@@ -854,20 +853,20 @@ class StepperAxis:
             send_raw(f"{self.axis}{sps}\n")
             self.last_sps_sent = sps
             self.last_send_t = now
- 
- 
+
+
 def send_raw(s):
     """Gửi chuỗi thẳng tới Arduino (dùng cho lệnh tốc độ P/T)."""
     ser.write(s.encode())
     ser.flush()
- 
- 
+
+
 def send(cmd):
     print("[SEND]", cmd)
     ser.write(cmd.encode())
     ser.flush()
- 
- 
+
+
 # ================= LIMIT SWITCH STATE (doc tu Arduino) =================
 # Thu tu Arduino gui "LIM:up,down,left,right" = A0,A1,A2,A3
 #   A0 = len   (tilt am)   -> lim_tilt_neg
@@ -879,7 +878,7 @@ lim_tilt_pos = False
 lim_pan_neg = False
 lim_pan_pos = False
 _serial_buf = ""
- 
+
 def poll_limits():
     """Doc cac dong Arduino gui, cap nhat trang thai limit. Khong block.
     Cac dong khac (MODE:, OK ..., READY...) in ra console de debug."""
@@ -913,11 +912,11 @@ def poll_limits():
             else:
                 # Cac thong bao khac tu Arduino: MODE:, OK ..., READY...
                 print(f"[ARD] {line}")
- 
- 
+
+
 # ================= LASER =================
 laser_on = False
- 
+
 def set_laser(on):
     """Chi gui serial khi trang thai laser that su doi."""
     global laser_on
@@ -927,8 +926,8 @@ def set_laser(on):
     elif (not on) and laser_on:
         send("K")
         laser_on = False
- 
- 
+
+
 # ================= FIRE SEQUENCE =================
 # Khi vao deadzone, thuc hien tuan tu:
 #   1. Quay them OFFSET_PAN_STEPS + OFFSET_TILT_STEPS de laser ngam trung chuot.
@@ -938,14 +937,14 @@ def set_laser(on):
 #
 # Cach hoat dong: gui lenh toc do AIM_SPS theo chieu OFFSET, giu trong khoang
 # thoi gian = |offset_steps| / AIM_SPS giay -> dung. Sau do quay nguoc lai.
- 
+
 fire_state = "idle"        # idle / aim / shoot / return / cooldown
 fire_t0 = 0.0              # thoi diem bat dau giai doan hien tai
 fire_target_pan = False    # con can quay them pan/tilt khong
 fire_target_tilt = False
 fire_already_in_dz = False # da vao deadzone tu lan truoc chua (de tranh ban lien tuc)
- 
- 
+
+
 def fire_axis_move(axis_letter, steps_to_move):
     """Tinh toc do gui cho 1 truc de quay 'steps_to_move' buoc (co dau)."""
     if steps_to_move == 0:
@@ -954,26 +953,26 @@ def fire_axis_move(axis_letter, steps_to_move):
     duration = abs(steps_to_move) / AIM_SPS
     send_raw(f"{axis_letter}{sps}\n")
     return sps, duration
- 
- 
+
+
 def fire_step(target_in_deadzone):
     """
     Cap nhat may trang thai ban moi vong loop.
     Tra ve True neu dang ban (block tracking).
     target_in_deadzone: tam chuot co dang trong deadzone khong.
- 
+
     !!! NEU OFFSET = 0 (chua calibrate) -> KHONG kich hoat ban.
         He thong chay nhu cu: tracking + scan, KHONG ban.
         Chi sau khi chay calibrate_laser.py va luu offset thi moi ban.
     """
     global fire_state, fire_t0, fire_already_in_dz
- 
+
     # An toan: chua calibrate -> tat ban hoan toan, khong dung tracking
     if LASER_OFFSET_PAN_STEPS == 0 and LASER_OFFSET_TILT_STEPS == 0:
         return False
- 
+
     now = time.time()
- 
+
     if fire_state == "idle":
         # Co dieu kien ban: target trong deadzone + chua vao deadzone trong lan truoc
         if target_in_deadzone and not fire_already_in_dz:
@@ -989,7 +988,7 @@ def fire_step(target_in_deadzone):
         if not target_in_deadzone:
             fire_already_in_dz = False
         return False
- 
+
     if fire_state == "aim":
         # Cho cho den khi quay du so buoc
         aim_duration = max(
@@ -1006,7 +1005,7 @@ def fire_step(target_in_deadzone):
             fire_state = "shoot"
             fire_t0 = now
         return True
- 
+
     if fire_state == "shoot":
         # Giu laser sang trong LASER_ON_TIME
         if now - fire_t0 >= LASER_ON_TIME:
@@ -1018,7 +1017,7 @@ def fire_step(target_in_deadzone):
             fire_axis_move("P", -LASER_OFFSET_PAN_STEPS)
             fire_axis_move("T", -LASER_OFFSET_TILT_STEPS)
         return True
- 
+
     if fire_state == "return":
         return_duration = max(
             abs(LASER_OFFSET_PAN_STEPS) / AIM_SPS,
@@ -1030,7 +1029,7 @@ def fire_step(target_in_deadzone):
             fire_state = "cooldown"
             fire_t0 = now
         return True
- 
+
     if fire_state == "cooldown":
         if now - fire_t0 >= FIRE_COOLDOWN:
             fire_state = "idle"
@@ -1039,10 +1038,10 @@ def fire_step(target_in_deadzone):
         # COOLDOWN KHONG block tracking -> motor di lai chuot ngay,
         # khong khung sau khi ban (truoc day return True lam cam dung 0.5s)
         return False
- 
+
     return False
- 
- 
+
+
 # Trục ngang (pan): dx > 0 -> đối tượng ở bên phải -> camera quay phải (P dương)
 axis_x = StepperAxis(
     axis_letter="P", deadzone=DEADZONE_X, max_error=MAX_ERROR_X,
@@ -1053,19 +1052,19 @@ axis_y = StepperAxis(
     axis_letter="T", deadzone=DEADZONE_Y, max_error=MAX_ERROR_Y,
     max_sps=TILT_MAX_SPS, min_sps=TILT_MIN_SPS
 )
- 
+
 last_dets = []
 miss_count = 0
 prev_t = time.time()
 fps = 0.0
- 
+
 # Theo doi mode hien tai de chi gui F/S khi DOI mode, khong spam
 _current_mode = None     # "TRACK" hoac "SCAN", None luc dau
- 
- 
+
+
 try:
     print("[INFO] Webcam + YOLO tracking ready. ESC de thoat.")
- 
+
     while True:
         ret, frame = cap.read()
         if not ret or frame is None:
@@ -1074,9 +1073,9 @@ try:
         h, w = frame.shape[:2]
         frame_cx = w // 2
         frame_cy = h // 2
- 
+
         detections = detector.detect(frame)
- 
+
         if detections:
             last_dets = detections
             miss_count = 0
@@ -1090,12 +1089,12 @@ try:
             else:
                 display_dets = []
                 fresh = False
- 
+
         target_found = False
         dx = 0
         dy = 0
         center_in_deadzone = False
- 
+
         if display_dets:
             # Chon target GAN TAM CAMERA NHAT (uu tien khi co nhieu muc tieu)
             def _dist_to_aim(d):
@@ -1105,26 +1104,33 @@ try:
             x1, y1, x2, y2 = det["box"]
             obj_cx, obj_cy = det["center"]
             conf = det["conf"]
- 
+
             target_found = True
- 
+
             # ===== ERROR THEO TÂM BOX vs AIM POINT (laser thực tế) =====
             # Laser gắn lệch -> phải kéo tâm con chuột về điểm laser chiếu,
             # KHÔNG phải về tâm frame.
             dx = obj_cx - frame_cx
             dy = obj_cy - frame_cy
- 
+
             center_in_deadzone = (abs(dx) <= DEADZONE_X and abs(dy) <= DEADZONE_Y)
- 
+
+            # === LOG debug huong: in moi 10 frame ===
+            if miss_count == 0 and (int(time.time() * 5) % 5 == 0):
+                print(f"[TRACK] chuot tai ({obj_cx},{obj_cy}), tam cam ({frame_cx},{frame_cy}), "
+                      f"dx={dx} dy={dy}  -> motor nen quay: "
+                      f"pan={'PHAI' if dx > 0 else 'TRAI' if dx < 0 else '-'}, "
+                      f"tilt={'XUONG' if dy > 0 else 'LEN' if dy < 0 else '-'}")
+
             color = (0, 255, 0) if fresh else (0, 200, 200)
- 
+
             # Vẽ mask seg (tô màu vùng con chuột) nếu có
             seg_mask = det.get("mask")
             if seg_mask is not None:
                 overlay = frame.copy()
                 overlay[seg_mask] = color
                 cv2.addWeighted(overlay, 0.4, frame, 0.6, 0, frame)
- 
+
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
             cv2.circle(frame, (obj_cx, obj_cy), 5, (0, 0, 255), -1)
             cv2.line(frame, (frame_cx, frame_cy),
@@ -1135,14 +1141,14 @@ try:
                 (x1, max(20, y1 - 8)),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2
             )
- 
+
         # ===== Doc trang thai limit tu Arduino (chac kep) =====
         poll_limits()
- 
+
         # ===== FIRE STEP: neu dang ban (quay offset + ban + quay ve) thi skip tracking =====
         target_in_deadzone = target_found and center_in_deadzone
         is_firing = fire_step(target_in_deadzone)
- 
+
         # ===== Điều khiển motor: chi tracking khi KHONG dang ban =====
         if is_firing:
             # Khi dang ban, fire_step da gui lenh motor truc tiep -> khong lam gi them
@@ -1177,9 +1183,9 @@ try:
                 # Vua moi mat target, cho them chut moi quet -> tam dung
                 axis_x.send_sps(0, send_raw)
                 axis_y.send_sps(0, send_raw)
- 
+
         # Laser giu nguyen, fire_step lo bat/tat. Khong dung set_laser cu nua.
- 
+
         # ===== Vẽ vùng deadzone quanh AIM POINT (xanh = trúng, trắng = chưa) =====
         dz_color = (0, 255, 0) if (target_found and center_in_deadzone) else (255, 255, 255)
         cv2.rectangle(
@@ -1188,37 +1194,37 @@ try:
             (frame_cx + DEADZONE_X, frame_cy + DEADZONE_Y),
             dz_color, 1
         )
- 
+
         # Crosshair vàng đánh dấu AIM POINT (vị trí laser thực tế)
         # Khi calibrate đúng, crosshair này phải trùng với chấm laser thật trên frame.
         cv2.drawMarker(frame, (frame_cx, frame_cy), (0, 255, 255),
                        markerType=cv2.MARKER_CROSS, markerSize=20, thickness=2)
         # Chấm xanh dương = tâm frame thật (tham chiếu)
         cv2.circle(frame, (frame_cx, frame_cy), 3, (255, 0, 0), -1)
- 
+
         # ===== FPS =====
         now = time.time()
         dt = now - prev_t
         if dt > 0:
             fps = 0.9 * fps + 0.1 * (1.0 / dt)
         prev_t = now
- 
+
         info = f"FPS: {fps:.1f} conf>={DET_CONF} det:{len(display_dets)}"
         cv2.putText(frame, info, (10, 25),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
- 
+
         # Debug motor: toc do step/s dang gui
         dbg = (f"PAN sps={axis_x.current_sps}  "
                f"TILT sps={axis_y.current_sps}")
         cv2.putText(frame, dbg, (10, 80),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
- 
+
         # Trang thai: SCANNING / TRACKING
         mode_txt = "SCANNING" if scanner.active else ("TRACKING" if target_found else "WAITING")
         mode_color = (0, 165, 255) if scanner.active else ((0, 255, 0) if target_found else (200, 200, 200))
         cv2.putText(frame, mode_txt, (w - 140, 25),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, mode_color, 2)
- 
+
         # Debug limit: hien cong tac nao dang cham (mau do)
         lim_txt = "LIM:"
         lim_txt += " LEN" if lim_tilt_neg else ""
@@ -1228,13 +1234,13 @@ try:
         if lim_txt != "LIM:":
             cv2.putText(frame, lim_txt, (10, 100),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
- 
+
         # Hien thi offset laser (step) - co dinh, chinh trong calibrate_laser.py
         cv2.putText(frame,
                     f"LASER OFFSET steps: pan={LASER_OFFSET_PAN_STEPS} tilt={LASER_OFFSET_TILT_STEPS}",
                     (10, h - 15),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 0), 1)
- 
+
         # Chi bao trang thai laser / fire state
         if fire_state != "idle":
             cv2.putText(frame, f"FIRING: {fire_state.upper()}", (10, 55),
@@ -1244,12 +1250,12 @@ try:
             cv2.putText(frame, "LASER ON", (10, 55),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             cv2.circle(frame, (w - 30, 30), 12, (0, 0, 255), -1)
- 
+
         cv2.imshow("Mouse Auto Tracking", frame)
         key = cv2.waitKey(1) & 0xFF
         if key == 27:    # ESC
             break
- 
+
 finally:
     set_laser(False)
     send("x")

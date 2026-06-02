@@ -281,30 +281,6 @@
  *  'S'=mode SCAN  (KHONG chan limit, motor co the quay nguoc lai khi cham)
  */
 
-/*
- * 2 STEPPER closed-loop HBS57 (STEP/DIR) + 4 limit switch + laser
- *
- * ====== DAU DAY ======
- *  PAN  (ngang): STEP=D2, DIR=D3   -> HBS57 #1 (PUL-, DIR-)
- *  TILT (doc)  : STEP=D5, DIR=D6   -> HBS57 #2 (PUL-, DIR-)
- *  PUL+/DIR+ cua ca 2 driver -> 5V Arduino
- *  LASER = A5 (active HIGH)
- *
- *  LIMIT SWITCH (chan chung GND, INPUT_PULLUP, nhan=LOW):
- *    A0 = cong tac TREN vat ly  (chan tilt khi quay LEN)
- *    A1 = cong tac DUOI vat ly  (chan tilt khi quay XUONG)
- *    A2 = cong tac PHAI vat ly  (chan PAN khi quay TRAI - PAN DOI DIEN)
- *    A3 = cong tac TRAI vat ly  (chan PAN khi quay PHAI - PAN DOI DIEN)
- *
- * ====== GIAO THUC LENH (tu Python) ======
- *  "P<so>\n" -> toc do PAN  (>0 phai, <0 trai, =0 dung), |so|=step/s
- *  "T<so>\n" -> toc do TILT (>0 xuong, <0 len, =0 dung)
- *  'L'=bat laser  'K'=tat laser  'x'=dung het+tat laser
- *  '?'=in limit 1 lan  '+'/'-'=auto in (nguoi doc)  'M'/'N'=auto in (may doc)
- *  'F'=mode TRACK (chan cung cham limit, BAO VE phan cung) - MAC DINH
- *  'S'=mode SCAN  (KHONG chan limit, motor co the quay nguoc lai khi cham)
- */
-
 #define PAN_STEP   2
 #define PAN_DIR    3
 #define TILT_STEP  5
@@ -344,9 +320,8 @@ bool cmd_has_digit = false;
 void applyCmd(char axis, long val) {
   if (axis == 'P') {
     pan_sps = constrain(val, -MAX_SPS, MAX_SPS);
-    // DA DAO HIGH/LOW de pan_sps>0 = quay PHAI vat ly (khop voi setup phan cung)
-    if (pan_sps > 0) digitalWrite(PAN_DIR, LOW);
-    else if (pan_sps < 0) digitalWrite(PAN_DIR, HIGH);
+    if (pan_sps > 0) digitalWrite(PAN_DIR, HIGH);
+    else if (pan_sps < 0) digitalWrite(PAN_DIR, LOW);
     Serial.print("OK PAN sps="); Serial.println(pan_sps);
   } else if (axis == 'T') {
     tilt_sps = constrain(val, -MAX_SPS, MAX_SPS);
@@ -445,13 +420,22 @@ void loop() {
 
   unsigned long now = micros();
 
-  // ===== PAN: cham limit -> DUNG huong do (ca TRACK va SCAN) =====
-  // Python (Scanner) tu lo lat chieu khi scan, dua tren trang thai LIM
-  // Arduino chi viec: huong nao cham limit thi khong phat xung huong do.
+  // ===== PAN: cham limit -> DAO CHIEU NGAY (khong dung) =====
+  // Quay phai (pan_sps>0) + cham cong tac TRAI vat ly (A3 = LIM_PAN_POS)
+  //   -> dao chieu thanh quay trai (-pan_sps)
+  // Quay trai (pan_sps<0) + cham cong tac PHAI vat ly (A2 = LIM_PAN_NEG)
+  //   -> dao chieu thanh quay phai (+pan_sps)
+  // Lam o CA tracking va scan (khong phu thuoc safety_block).
+  if (pan_sps > 0 && limitHit(LIM_PAN_POS)) {
+    pan_sps = -pan_sps;
+    digitalWrite(PAN_DIR, LOW);   // pan_sps am -> DIR LOW
+  } else if (pan_sps < 0 && limitHit(LIM_PAN_NEG)) {
+    pan_sps = -pan_sps;
+    digitalWrite(PAN_DIR, HIGH);  // pan_sps duong -> DIR HIGH
+  }
+
   long pan_abs = labs(pan_sps);
-  bool pan_blocked = (pan_sps > 0 && limitHit(LIM_PAN_POS)) ||
-                     (pan_sps < 0 && limitHit(LIM_PAN_NEG));
-  if (pan_abs >= MIN_SPS && !pan_blocked) {
+  if (pan_abs >= MIN_SPS) {
     unsigned long half_us = 1000000UL / (2UL * pan_abs);
     if (now - pan_last_us >= half_us) {
       pan_pin_state = !pan_pin_state;
