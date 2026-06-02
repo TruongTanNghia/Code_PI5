@@ -344,8 +344,9 @@ bool cmd_has_digit = false;
 void applyCmd(char axis, long val) {
   if (axis == 'P') {
     pan_sps = constrain(val, -MAX_SPS, MAX_SPS);
-    if (pan_sps > 0) digitalWrite(PAN_DIR, HIGH);
-    else if (pan_sps < 0) digitalWrite(PAN_DIR, LOW);
+    // DA DAO HIGH/LOW de pan_sps>0 = quay PHAI vat ly (khop voi setup phan cung)
+    if (pan_sps > 0) digitalWrite(PAN_DIR, LOW);
+    else if (pan_sps < 0) digitalWrite(PAN_DIR, HIGH);
     Serial.print("OK PAN sps="); Serial.println(pan_sps);
   } else if (axis == 'T') {
     tilt_sps = constrain(val, -MAX_SPS, MAX_SPS);
