@@ -551,7 +551,7 @@ from config import DET_PERSIST_FRAMES, DET_CONF
 # DET_CONF cang CAO -> can chac chan hon moi tinh la chuot (it nham, nhung
 # co the bo lo). Cang THAP -> de phat hien hon (nhung de nham vat khac).
 # Khuyen nghi: 0.5 - 0.7 cho ngoai canh thuc te.
-DET_CONF = 0.5             # <<< CHINH NGUONG TAI DAY (cu = 0.25, gio = 0.5)
+DET_CONF = 0.6             # <<< CHINH NGUONG TAI DAY (cu = 0.25, gio = 0.5)
 
 # So frame "nho" detection cu khi YOLO bo lo 1-2 frame (chong nhap nhay).
 # Cang LON -> bam on dinh hon, khong scan loan khi YOLO mat 1 vai frame.
@@ -563,7 +563,7 @@ DET_PERSIST_FRAMES = 15    # <<< Tang tu mac dinh (thuong 5-10) len 15
 # Linux/Pi: "/dev/ttyUSB0", "/dev/ttyACM0"...
 import sys as _sys
 if _sys.platform.startswith("win"):
-    PORT = "COM3"          # <<< DOI sang COM that cua Arduino tren Windows
+    PORT = "COM5"          # <<< DOI sang COM that cua Arduino tren Windows
 else:
     PORT = "/dev/ttyUSB0"  # tren Raspberry Pi
 BAUD = 9600
@@ -606,8 +606,9 @@ detector = MouseDetector(conf=DET_CONF)  # dung nguong tu override o tren
 
 # ================= TRACKING CONFIG =================
 # Vùng "đứng yên" - vào trong vùng này thì motor dừng hẳn -> san sang BAN.
-DEADZONE_X = 45
-DEADZONE_Y = 45
+# NHO -> tam camera trung sat tam chuot hon. LON -> motor de "dung han" hon.
+DEADZONE_X = 20
+DEADZONE_Y = 20
 
 # ===== LASER FIRE CONFIG =====
 # Sau khi vao deadzone (tam cam vao tam chuot), motor quay them OFFSET buoc
