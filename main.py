@@ -640,9 +640,12 @@ AIM_OFFSET_X = 0      # se nap tu file neu co
 AIM_OFFSET_Y = 0
 AIM_CAL_STEP = 3      # moi lan bam phim dich bao nhieu pixel
 
-# Nhich tam ngam LEN TREN bao nhieu pixel (luon ap dung, khong can trung cham do).
-# Tang -> tam ngam cao hon; giam -> thap hon. 0 = dung tam.
-AIM_NUDGE_UP = 50
+# ===== NGAM VAO CANH TREN BOX (thay vi tam box) =====
+# True -> tam ngam bam vao CANH TREN giua box con chuot (de laser trung dau).
+# AIM_TOP_MARGIN = nhich them xuong duoi canh tren bao nhieu px (0 = dung canh tren,
+#   duong = thap xuong 1 chut vao trong box, am = cao hon canh tren).
+AIM_AT_TOP = True
+AIM_TOP_MARGIN = 0
 
 import os as _os2
 if _os2.path.exists(AIM_OFFSET_FILE):
@@ -1110,7 +1113,7 @@ try:
         frame_cy = h // 2
         # Diem ngam laser = tam frame + offset pixel (calibrate bang phim I/J/K/L)
         aim_x = frame_cx + AIM_OFFSET_X
-        aim_y = frame_cy + AIM_OFFSET_Y - AIM_NUDGE_UP   # tru = nhich LEN TREN
+        aim_y = frame_cy + AIM_OFFSET_Y
 
         detections = detector.detect(frame)
 
@@ -1140,8 +1143,15 @@ try:
                 return (cx - frame_cx) ** 2 + (cy - frame_cy) ** 2
             det = min(display_dets, key=_dist_to_aim)
             x1, y1, x2, y2 = det["box"]
-            raw_cx, raw_cy = det["center"]
             conf = det["conf"]
+
+            # Diem muc tieu: CANH TREN giua box (de laser ngam vao dau con chuot)
+            # hoac tam box (neu AIM_AT_TOP = False)
+            if AIM_AT_TOP:
+                raw_cx = (x1 + x2) // 2
+                raw_cy = y1 + AIM_TOP_MARGIN
+            else:
+                raw_cx, raw_cy = det["center"]
 
             # ===== LAM MUOT tam (EMA) -> chong lac do box nhay =====
             if smooth_cx is None:
