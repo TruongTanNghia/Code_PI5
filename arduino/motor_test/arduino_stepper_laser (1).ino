@@ -32,8 +32,11 @@
 #define LIM_TILT_NEG  A0   // ngat quay LEN  = cong tac TREN vat ly
 #define LIM_TILT_POS  A1   // ngat quay XUONG = cong tac DUOI vat ly
 // PAN DOI DIEN: quay trai dap cong tac PHAI, quay phai dap cong tac TRAI
-#define LIM_PAN_NEG   A2   // ngat quay TRAI = cong tac ben PHAI vat ly
-#define LIM_PAN_POS   A3   // ngat quay PHAI = cong tac ben TRAI vat ly
+// DA SWAP A2<->A3 cho khop dau day thuc te (xac dinh tu log):
+//   pan quay TRAI (sps<0) dap cong tac PHAI vat ly = A3 -> chan sps<0
+//   pan quay PHAI (sps>0) dap cong tac TRAI vat ly = A2 -> chan sps>0
+#define LIM_PAN_NEG   A3   // ngat quay TRAI (sps<0) = cong tac PHAI vat ly (A3)
+#define LIM_PAN_POS   A2   // ngat quay PHAI (sps>0) = cong tac TRAI vat ly (A2)
 
 const long MAX_SPS = 4000;
 const long MIN_SPS = 150;
