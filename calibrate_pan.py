@@ -1,26 +1,23 @@
 """
-CALIBRATE TAM QUET PAN (trai/phai) - CO CAMERA + CHAM CONG TAC DE DO CHUAN.
+DO VUNG TUAN TRA PAN - NHICH TUNG BUOC NHO (an toan, khong chay ao).
 
-Lai pan trai/phai. Khi CHAM CONG TAC HANH TRINH that -> tu dong danh dau bien
-+ dung motor (do chinh xac). Cung co the danh dau tay (1/2).
-Luu toa do vao pan_range.txt -> main.py dung luon.
+Moi lan bam phim, motor nhich 1 BUOC NHO roi DUNG NGAY. Khong chay lien tuc.
+Co camera de nhin. Danh dau mep TRAI/PHAI, luu vao pan_range.txt.
 
 CACH DUNG:
     py calibrate_pan.py
 
 PHIM (bam trong cua so camera):
-    D = quay PHAI (cham cong tac PHAI -> tu danh dau + dung)
-    A = quay TRAI (cham cong tac TRAI -> tu danh dau + dung)
-    SPACE = DUNG
+    A / mui ten TRAI  = nhich TRAI 1 buoc
+    D / mui ten PHAI  = nhich PHAI 1 buoc
+    (giu phim = nhich lien tuc tung buoc, nha ra la dung)
+    W = tang buoc nhich (di nhanh hon)
+    S = giam buoc nhich (di cham hon, ti mi hon)
     Z = set vi tri hien tai = 0 (tam)
-    1 = danh dau BIEN TRAI tay   2 = danh dau BIEN PHAI tay
-    S = LUU file pan_range.txt
+    1 = danh dau MEP TRAI  + luu
+    2 = danh dau MEP PHAI  + luu
+    SPACE = dung khan cap
     ESC = thoat
-
-QUY TRINH DE NHAT (dung cong tac):
-    1. Bam D -> motor quay phai den khi CHAM cong tac -> tu danh dau PHAI + dung
-    2. Bam A -> motor quay trai den khi CHAM cong tac -> tu danh dau TRAI + dung
-    3. Bam S -> luu. Xong!
 """
 import sys
 import time
@@ -38,9 +35,10 @@ except ImportError:
 
 IS_WINDOWS = sys.platform.startswith("win")
 PAN_RANGE_FILE = "pan_range.txt"
-JOG_SPS = 150       # toc do lai LIEN TUC (cham, de canh)
-NUDGE_SPS = 150     # toc do khi nhich tung chut
-NUDGE_TIME = 0.12   # moi lan nhich chay bao lau (giay) ~ 18 step
+
+NUDGE_SPS = 200          # toc do khi nhich (cham)
+step_size = 40           # so step moi lan bam phim (chinh bang W/S)
+STEP_MIN, STEP_MAX = 5, 400
 
 
 def find_arduino_port():
@@ -66,43 +64,18 @@ def open_camera():
             if cap.isOpened():
                 ok, fr = cap.read()
                 if ok and fr is not None and fr.size > 0:
-                    print(f"[INFO] Camera OK: index={idx}")
                     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
                     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
                     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    print(f"[INFO] Camera OK: index={idx}")
                     return cap
             cap.release()
     return None
 
 
-# ===== Trang thai limit tu Arduino =====
-lim = {"tilt_neg": False, "tilt_pos": False, "pan_neg": False, "pan_pos": False}
-_buf = ""
-
-def poll_limits(ser):
-    global _buf
-    try:
-        n = ser.in_waiting
-    except Exception:
-        return
-    if not n:
-        return
-    _buf += ser.read(n).decode(errors="ignore")
-    while "\n" in _buf:
-        line, _buf = _buf.split("\n", 1)
-        line = line.strip()
-        if line.startswith("LIM:"):
-            try:
-                a0, a1, a2, a3 = (int(x) for x in line[4:].split(",")[:4])
-                lim["tilt_neg"] = bool(a0)
-                lim["tilt_pos"] = bool(a1)
-                lim["pan_neg"] = bool(a2)
-                lim["pan_pos"] = bool(a3)
-            except Exception:
-                pass
-
-
 def main():
+    global step_size
+
     port = find_arduino_port()
     if not port:
         print("[!] Khong tim thay Arduino.")
@@ -112,82 +85,49 @@ def main():
     ser.setDTR(False)
     time.sleep(2)
     ser.reset_input_buffer()
-    ser.write(b"M\n")   # bat machine-report de doc cong tac
-    ser.flush()
-    time.sleep(0.1)
-    ser.write(b"S")     # SCAN mode: Arduino KHONG tu chan, de minh lai cham cong tac
+    ser.write(b"S")   # SCAN mode: Arduino khong tu chan, minh tu lai
     ser.flush()
 
     def send(s):
         ser.write(s.encode())
         ser.flush()
 
-    cap = open_camera()
-    if cap is None:
-        print("[!] Khong mo duoc camera (van do duoc, chi la khong co hinh).")
+    def nudge(direction):
+        """Nhich 1 buoc nho: chay NUDGE_SPS trong thoi gian = step/sps, roi dung."""
+        nonlocal_pos = step_size * direction
+        dur = step_size / NUDGE_SPS
+        send(f"P{NUDGE_SPS * direction}\n")
+        time.sleep(dur)
+        send("P0\n")
+        return nonlocal_pos
 
+    cap = open_camera()
     pan_pos = 0.0
-    last_sps = 0
     mark_left = None
     mark_right = None
-    nudge_until = 0.0       # thoi diem dung nhich
-    prev_t = time.time()
 
-    # Doc lai file cu neu co (de luu tung diem van giu duoc diem kia)
     import os
     if os.path.exists(PAN_RANGE_FILE):
         try:
             with open(PAN_RANGE_FILE) as f:
                 lo, hi = f.read().strip().split(",")
                 mark_left, mark_right = int(lo), int(hi)
-                print(f"[INFO] File cu: TRAI={mark_left}, PHAI={mark_right}")
+                print(f"[INFO] File cu: TRAI={mark_left} PHAI={mark_right}")
         except Exception:
             pass
 
     def save_file():
-        """Luu ngay voi gia tri hien co. Diem chua mark -> giu nguyen/0."""
         l = int(mark_left) if mark_left is not None else 0
         r = int(mark_right) if mark_right is not None else 0
         lo, hi = min(l, r), max(l, r)
         with open(PAN_RANGE_FILE, "w") as f:
             f.write(f"{lo},{hi}")
-        print(f"[CAL] >>> DA LUU pan_range.txt: TRAI={lo}, PHAI={hi} (rong {hi-lo})")
+        print(f"[CAL] >>> LUU pan_range.txt: TRAI={lo} PHAI={hi} (rong {hi-lo})")
 
-    print("[INFO] San sang. Bam phim trong cua so.")
+    print("[INFO] San sang. Bam A/D nhich, 1/2 danh dau, ESC thoat.")
 
     try:
         while True:
-            now = time.time()
-            dt = now - prev_t
-            prev_t = now
-            pan_pos += last_sps * dt
-
-            # Dung nhich khi het thoi gian
-            if nudge_until and now >= nudge_until and last_sps != 0:
-                last_sps = 0
-                send("P0\n")
-                nudge_until = 0.0
-
-            poll_limits(ser)
-
-            # ===== TU DANH DAU khi cham cong tac that =====
-            # quay phai (last_sps>0) cham cong tac chan-quay-phai (pan_pos = A3 slot)
-            if last_sps > 0 and lim["pan_pos"]:
-                mark_right = pan_pos
-                last_sps = 0
-                nudge_until = 0.0
-                send("P0\n")
-                print(f"[CAL] CHAM cong tac PHAI -> bien PHAI = {int(pan_pos)} (da dung)")
-                save_file()
-            elif last_sps < 0 and lim["pan_neg"]:
-                mark_left = pan_pos
-                last_sps = 0
-                nudge_until = 0.0
-                send("P0\n")
-                print(f"[CAL] CHAM cong tac TRAI -> bien TRAI = {int(pan_pos)} (da dung)")
-                save_file()
-
-            # ===== Lay frame camera =====
             frame = None
             if cap is not None:
                 ok, fr = cap.read()
@@ -196,62 +136,46 @@ def main():
             if frame is None:
                 frame = np.zeros((480, 640, 3), dtype=np.uint8)
 
-            # ===== Overlay thong tin =====
             def put(t, y, c=(0, 255, 255), s=0.6):
                 cv2.putText(frame, t, (12, y), cv2.FONT_HERSHEY_SIMPLEX, s, c, 2)
 
-            put("CALIBRATE PAN", 30, (0, 255, 0))
-            put(f"VI TRI: {int(pan_pos)} step", 60, (255, 255, 0), 0.8)
-            dir_txt = "PHAI->" if last_sps > 0 else ("<-TRAI" if last_sps < 0 else "DUNG")
-            put(f"{dir_txt}", 90)
-            put(f"bien TRAI(1): {int(mark_left) if mark_left is not None else '--'}", 120)
-            put(f"bien PHAI(2): {int(mark_right) if mark_right is not None else '--'}", 145)
-            # trang thai cong tac
-            lp = "PHAI:NHAN" if lim["pan_pos"] else "phai:nha"
-            ln = "TRAI:NHAN" if lim["pan_neg"] else "trai:nha"
-            put(f"congtac {ln} {lp}", 170,
-                (0, 0, 255) if (lim["pan_pos"] or lim["pan_neg"]) else (180, 180, 180), 0.5)
-            put("D/A=chay lien tuc  E/Q=nhich tung chut  SPACE=dung", 430, (200, 200, 200), 0.45)
-            put("Z=set0  1=mark+luu TRAI  2=mark+luu PHAI", 450, (200, 200, 200), 0.45)
-            put("S=luu lai  ESC=thoat", 470, (200, 200, 200), 0.45)
+            put("DO VUNG TUAN TRA PAN", 30, (0, 255, 0))
+            put(f"VI TRI: {int(pan_pos)} step", 65, (255, 255, 0), 0.8)
+            put(f"Buoc nhich: {step_size} step  (W=tang S=giam)", 95, (255, 200, 0), 0.5)
+            put(f"MEP TRAI(1): {int(mark_left) if mark_left is not None else '--'}", 125)
+            put(f"MEP PHAI(2): {int(mark_right) if mark_right is not None else '--'}", 150)
+            if mark_left is not None and mark_right is not None:
+                put(f"=> Rong vung: {abs(int(mark_right)-int(mark_left))} step", 175, (0, 255, 0))
+            put("A=trai  D=phai (nhich tung buoc)", 430, (200, 200, 200), 0.5)
+            put("1=mep trai  2=mep phai  Z=set0  ESC=thoat", 455, (200, 200, 200), 0.5)
 
             cv2.imshow("Calibrate PAN", frame)
             key = cv2.waitKey(20) & 0xFF
 
             if key == 27:
                 break
-            elif key == ord('d'):              # chay lien tuc phai
-                last_sps = JOG_SPS
-                nudge_until = 0.0
-                send(f"P{JOG_SPS}\n")
-            elif key == ord('a'):              # chay lien tuc trai
-                last_sps = -JOG_SPS
-                nudge_until = 0.0
-                send(f"P{-JOG_SPS}\n")
-            elif key == ord('e'):              # NHICH phai tung chut
-                last_sps = NUDGE_SPS
-                nudge_until = now + NUDGE_TIME
-                send(f"P{NUDGE_SPS}\n")
-            elif key == ord('q'):              # NHICH trai tung chut
-                last_sps = -NUDGE_SPS
-                nudge_until = now + NUDGE_TIME
-                send(f"P{-NUDGE_SPS}\n")
+            elif key in (ord('a'), 81):       # 81 = mui ten trai
+                pan_pos += nudge(-1)
+            elif key in (ord('d'), 83):       # 83 = mui ten phai
+                pan_pos += nudge(+1)
+            elif key == ord('w'):
+                step_size = min(STEP_MAX, step_size + 10)
+                print(f"[CAL] buoc nhich = {step_size}")
+            elif key == ord('s'):
+                step_size = max(STEP_MIN, step_size - 10)
+                print(f"[CAL] buoc nhich = {step_size}")
             elif key == ord(' '):
-                last_sps = 0
-                nudge_until = 0.0
                 send("P0\n")
             elif key == ord('z'):
                 pan_pos = 0.0
                 print("[CAL] set vi tri = 0")
-            elif key == ord('1'):              # mark TRAI + luu ngay
+            elif key == ord('1'):
                 mark_left = pan_pos
-                print(f"[CAL] mark TRAI = {int(pan_pos)}")
+                print(f"[CAL] MEP TRAI = {int(pan_pos)}")
                 save_file()
-            elif key == ord('2'):              # mark PHAI + luu ngay
+            elif key == ord('2'):
                 mark_right = pan_pos
-                print(f"[CAL] mark PHAI = {int(pan_pos)}")
-                save_file()
-            elif key == ord('s'):              # luu lai (du phong)
+                print(f"[CAL] MEP PHAI = {int(pan_pos)}")
                 save_file()
 
     except KeyboardInterrupt:
