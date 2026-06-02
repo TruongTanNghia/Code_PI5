@@ -551,7 +551,7 @@ from config import DET_PERSIST_FRAMES, DET_CONF
 # DET_CONF cang CAO -> can chac chan hon moi tinh la chuot (it nham, nhung
 # co the bo lo). Cang THAP -> de phat hien hon (nhung de nham vat khac).
 # Khuyen nghi: 0.5 - 0.7 cho ngoai canh thuc te.
-DET_CONF = 0.6             # <<< CHINH NGUONG TAI DAY (cu = 0.25, gio = 0.5)
+DET_CONF = 0.5             # <<< CHINH NGUONG TAI DAY (cu = 0.25, gio = 0.5)
 
 # So frame "nho" detection cu khi YOLO bo lo 1-2 frame (chong nhap nhay).
 # Cang LON -> bam on dinh hon, khong scan loan khi YOLO mat 1 vai frame.
@@ -563,7 +563,7 @@ DET_PERSIST_FRAMES = 15    # <<< Tang tu mac dinh (thuong 5-10) len 15
 # Linux/Pi: "/dev/ttyUSB0", "/dev/ttyACM0"...
 import sys as _sys
 if _sys.platform.startswith("win"):
-    PORT = "COM5"          # <<< DOI sang COM that cua Arduino tren Windows
+    PORT = "COM3"          # <<< DOI sang COM that cua Arduino tren Windows
 else:
     PORT = "/dev/ttyUSB0"  # tren Raspberry Pi
 BAUD = 9600
@@ -607,8 +607,8 @@ detector = MouseDetector(conf=DET_CONF)  # dung nguong tu override o tren
 # ================= TRACKING CONFIG =================
 # Vùng "đứng yên" - vào trong vùng này thì motor dừng hẳn -> san sang BAN.
 # NHO -> tam camera trung sat tam chuot hon. LON -> motor de "dung han" hon.
-DEADZONE_X = 20
-DEADZONE_Y = 20
+DEADZONE_X = 30
+DEADZONE_Y = 30
 
 # ===== LASER FIRE CONFIG =====
 # Sau khi vao deadzone (tam cam vao tam chuot), motor quay them OFFSET buoc
@@ -661,9 +661,9 @@ MAX_ERROR_X = 450     # pixel: keo dai -> pan cham lai som hon khi gan tam
 MAX_ERROR_Y = 380     # pixel: tilt tuong tu
 
 PAN_MAX_SPS  = 1800   # ha tu 3500 -> 1800: cham hon, khong vot qua tam
-PAN_MIN_SPS  = 120    # sat tam bo rat cham -> vao chinh xac
+PAN_MIN_SPS  = 250    # tang tu 120 -> 250: bo manh hon vao tam (do thieu luc)
 TILT_MAX_SPS = 1500   # tilt cham hon chut
-TILT_MIN_SPS = 100
+TILT_MIN_SPS = 200    # tang tu 100 -> 200
 
 # Chi gui lenh toc do moi khi thay doi du lon -> do spam serial.
 SPS_SEND_STEP = 60     # step/s: chenh nho hon nay thi khong gui lai
