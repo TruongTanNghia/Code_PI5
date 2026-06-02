@@ -625,8 +625,8 @@ DEADZONE_Y = 30
 #   - Neu camera quay sang PHAI (dung) -> giu nguyen.
 #   - Neu camera quay sang TRAI (sai)  -> doi INVERT_PAN.
 # Tuong tu cho tilt: dua chuot XUONG duoi, camera phai cui XUONG.
-INVERT_PAN  = True    # hien tai dang dao (vi truoc dung dx = frame_cx - obj_cx)
-INVERT_TILT = False
+INVERT_PAN  = False   # da test: chuot ben PHAI -> phai pan PHAI -> INVERT_PAN=False
+INVERT_TILT = False   # neu tilt nguoc (chuot duoi ma cam nguoc len) -> doi True
 
 # ===== LASER FIRE CONFIG =====
 # Sau khi vao deadzone (tam cam vao tam chuot), motor quay them OFFSET buoc
