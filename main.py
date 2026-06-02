@@ -726,6 +726,25 @@ SCAN_TILT_STEP_TIME = 0.3 # giay: thoi gian nhich tilt moi khi doi chieu pan
 SCAN_START_DELAY = 2.0    # giay: doi LAU hon truoc khi quet (tu 0.5 -> 2.0)
                           # giup khong scan loan khi YOLO nhap nhay 1-2 frame
 
+# ===== TUAN TRA THEO TOA DO (quet trong khu vuc trai-phai chi dinh) =====
+# Pan dao chieu khi vi tri (so step uoc luong) ra ngoai khoang [MIN, MAX].
+# Vi tri = Python tu dem (tich phan toc do), KHONG can cong tac.
+# Dat vung tuan tra: chay main.py, bam '[' o mep TRAI, ']' o mep PHAI (luu tu dong).
+# Hoac chay calibrate_pan.py. Mac dinh +/- PAN_SCAN_RANGE quanh diem khoi dong.
+USE_COORD_SCAN = True
+PAN_SCAN_RANGE = 3000              # mac dinh neu chua dat vung
+PAN_LIMIT_MIN = -PAN_SCAN_RANGE    # mep TRAI vung tuan tra (step)
+PAN_LIMIT_MAX = +PAN_SCAN_RANGE    # mep PHAI vung tuan tra (step)
+PAN_RANGE_FILE = "pan_range.txt"
+if _os2.path.exists(PAN_RANGE_FILE):
+    try:
+        with open(PAN_RANGE_FILE) as _fpr:
+            _lo, _hi = _fpr.read().strip().split(",")
+            PAN_LIMIT_MIN, PAN_LIMIT_MAX = int(_lo), int(_hi)
+            print(f"[INFO] Vung tuan tra: {PAN_LIMIT_MIN}..{PAN_LIMIT_MAX} step")
+    except Exception as _e:
+        print(f"[WARN] khong doc duoc {PAN_RANGE_FILE}: {_e}")
+
 
 class Scanner:
     """
@@ -765,28 +784,35 @@ class Scanner:
             return False
         return (time.time() - self.lost_since) >= SCAN_START_DELAY
 
-    def compute(self, now, lim_pan_neg, lim_pan_pos, lim_tilt_neg, lim_tilt_pos):
+    def compute(self, now, lim_pan_neg, lim_pan_pos, lim_tilt_neg, lim_tilt_pos,
+                pan_pos=0.0):
         """
-        Tinh toc do pan/tilt de quet.
-        Lat chieu theo LEVEL (muc): dang cham limit huong dang di -> LAT NGAY,
-        co cooldown 0.5s de motor kip ra khoi cong tac (khong lat lien tuc).
-        (Truoc dung edge-detect -> neu cong tac dinh LOW lien tuc thi khong co
-         canh moi -> khong lat -> ket cung. Level-trigger sua loi nay.)
+        Quet pan trong VUNG TOA DO [PAN_LIMIT_MIN, PAN_LIMIT_MAX].
+        Dao chieu khi pan_pos ra ngoai vung (khong can cong tac).
+        Cong tac that van duoc dung de dao + hieu chinh khi co nhan.
         """
         self.active = True
 
-        # ===== PAN: dang cham limit huong dang di? -> lat ngay (level) =====
-        pan_touching = (self.pan_dir > 0 and lim_pan_pos) or \
-                       (self.pan_dir < 0 and lim_pan_neg)
-        if pan_touching and now >= self._pan_flip_lock_until:
+        flip = False
+        if USE_COORD_SCAN:
+            # Dao chieu theo TOA DO (vung tuan tra)
+            if self.pan_dir > 0 and pan_pos >= PAN_LIMIT_MAX:
+                flip = True
+            elif self.pan_dir < 0 and pan_pos <= PAN_LIMIT_MIN:
+                flip = True
+        # Cong tac that cham huong dang di -> cung dao (backup/hieu chinh)
+        if not flip:
+            if (self.pan_dir > 0 and lim_pan_pos) or (self.pan_dir < 0 and lim_pan_neg):
+                flip = True
+
+        if flip and now >= self._pan_flip_lock_until:
             self.pan_dir = -self.pan_dir
             self.tilt_nudge_until = now + SCAN_TILT_STEP_TIME
             self.last_flip_t = now
-            self._pan_flip_lock_until = now + 0.5   # cooldown: cho motor ra khoi cong tac
+            self._pan_flip_lock_until = now + 0.4
 
-        # Toc do pan theo huong (sau khi co the da lat)
         pan_sps = SCAN_PAN_SPS * self.pan_dir
-        # An toan: neu huong MOI van cham limit (ca 2 cong tac?) -> dung
+        # An toan: cong tac that dang nhan huong dang di -> dung
         if (self.pan_dir > 0 and lim_pan_pos) or (self.pan_dir < 0 and lim_pan_neg):
             pan_sps = 0
 
@@ -1096,6 +1122,9 @@ smooth_cx = None
 smooth_cy = None
 SMOOTH_ALPHA = 0.5
 
+# Vi tri uoc luong truc PAN (step). + = phai, - = trai. Tich phan tu toc do.
+pan_pos_steps = 0.0
+
 # Theo doi mode hien tai de chi gui F/S khi DOI mode, khong spam
 _current_mode = None     # "TRACK" hoac "SCAN", None luc dau
 
@@ -1237,11 +1266,12 @@ try:
                 if _current_mode != "SCAN":
                     send_raw("S")
                     _current_mode = "SCAN"
-                # Scanner TU XU LY limit (lat chieu khi cham)
+                # Scanner quet trong vung toa do [PAN_LIMIT_MIN, MAX]
                 pan_scan, tilt_scan = scanner.compute(
                     time.time(),
                     lim_pan_neg, lim_pan_pos,
                     lim_tilt_neg, lim_tilt_pos,
+                    pan_pos=pan_pos_steps,
                 )
                 axis_x.send_sps(pan_scan, send_raw)
                 axis_y.send_sps(tilt_scan, send_raw)
@@ -1273,6 +1303,16 @@ try:
         dt = now - prev_t
         if dt > 0:
             fps = 0.9 * fps + 0.1 * (1.0 / dt)
+
+        # ===== DEM TOA DO PAN (tich phan toc do) =====
+        if dt > 0:
+            pan_pos_steps += axis_x.current_sps * dt
+        # Cong tac that nhan -> SNAP ve mep (hieu chinh troi)
+        if lim_pan_pos:
+            pan_pos_steps = PAN_LIMIT_MAX
+        elif lim_pan_neg:
+            pan_pos_steps = PAN_LIMIT_MIN
+
         prev_t = now
 
         info = f"FPS: {fps:.1f} conf>={DET_CONF} det:{len(display_dets)}"
@@ -1317,10 +1357,16 @@ try:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             cv2.circle(frame, (w - 30, 30), 12, (0, 0, 255), -1)
 
+        # ===== Hien vung tuan tra + vi tri pan =====
+        cv2.putText(frame,
+                    f"PATROL: {PAN_LIMIT_MIN}..{PAN_LIMIT_MAX}  PANpos={int(pan_pos_steps)}  "
+                    f"[H=set0  [=mep trai  ]=mep phai]",
+                    (10, h - 58),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 1)
         # ===== Hien huong dan calibrate tam ngam =====
         cv2.putText(frame,
                     f"AIM offset x={AIM_OFFSET_X} y={AIM_OFFSET_Y}  "
-                    f"[I/K=len/xuong J/L=trai/phai R=reset O=luu]",
+                    f"[I/K J/L R=reset O=luu]",
                     (10, h - 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
 
@@ -1352,6 +1398,27 @@ try:
                       f"-> {AIM_OFFSET_FILE}")
             except Exception as _ew:
                 print(f"[AIM] luu that bai: {_ew}")
+        elif key == ord('h'):       # HOME: set vi tri pan hien tai = 0 (tam tuan tra)
+            pan_pos_steps = 0.0
+            print("[PAN] set vi tri hien tai = 0 (tam tuan tra)")
+        elif key == ord('['):       # dat MEP TRAI vung tuan tra = vi tri hien tai
+            PAN_LIMIT_MIN = int(pan_pos_steps)
+            print(f"[PATROL] mep TRAI = {PAN_LIMIT_MIN}")
+            try:
+                with open(PAN_RANGE_FILE, "w") as _fp:
+                    _fp.write(f"{PAN_LIMIT_MIN},{PAN_LIMIT_MAX}")
+                print(f"[PATROL] da luu {PAN_LIMIT_MIN}..{PAN_LIMIT_MAX}")
+            except Exception as _e:
+                print(f"[PATROL] luu loi: {_e}")
+        elif key == ord(']'):       # dat MEP PHAI vung tuan tra = vi tri hien tai
+            PAN_LIMIT_MAX = int(pan_pos_steps)
+            print(f"[PATROL] mep PHAI = {PAN_LIMIT_MAX}")
+            try:
+                with open(PAN_RANGE_FILE, "w") as _fp:
+                    _fp.write(f"{PAN_LIMIT_MIN},{PAN_LIMIT_MAX}")
+                print(f"[PATROL] da luu {PAN_LIMIT_MIN}..{PAN_LIMIT_MAX}")
+            except Exception as _e:
+                print(f"[PATROL] luu loi: {_e}")
 
 finally:
     set_laser(False)
