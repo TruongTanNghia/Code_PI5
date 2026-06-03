@@ -1128,10 +1128,13 @@ SMOOTH_ALPHA = 0.5
 # Vi tri uoc luong truc PAN (step). + = phai, - = trai. Tich phan tu toc do.
 pan_pos_steps = 0.0
 
-# ===== LASER BURST: ban bao nhieu giay moi lan chuot vao vung =====
+# ===== LASER BURST: ban bao nhieu giay moi lan =====
 LASER_BURST = 3.5          # giay
-laser_armed = True         # san sang ban (True khi chuot dang o ngoai vung)
-laser_fire_until = 0.0     # thoi diem tat laser
+SETTLE_TIME = 0.4          # giay: chuot phai o yen trong vung + motor DUNG HAN
+                           # bao lau roi moi ban (tang -> chac chan dung hon)
+laser_armed = True
+laser_fire_until = 0.0
+dz_enter_t = None          # thoi diem chuot bat dau vao vung (de tinh settle)
 
 # Theo doi mode hien tai de chi gui F/S khi DOI mode, khong spam
 _current_mode = None     # "TRACK" hoac "SCAN", None luc dau
@@ -1249,23 +1252,34 @@ try:
         # ===== Doc trang thai limit tu Arduino (chac kep) =====
         poll_limits()
 
-        # ===== LASER: chuot vao deadzone -> BAN 3.5 giay roi tat =====
+        # ===== LASER: chi ban khi DA DUNG HAN tren muc tieu =====
+        # Dieu kien ban: chuot trong deadzone + motor DUNG (sps=0) + on dinh SETTLE_TIME.
         # Phai RA khoi vung roi VAO lai moi ban phat tiep.
         target_in_deadzone = target_found and center_in_deadzone
         _now_laser = time.time()
+        motor_stopped = (axis_x.current_sps == 0 and axis_y.current_sps == 0)
+
         if target_in_deadzone:
-            if laser_armed:
-                # Bat dau phat: bat laser, hen gio tat sau LASER_BURST
+            if dz_enter_t is None:
+                dz_enter_t = _now_laser
+            # Da o yen trong vung + motor dung du lau chua?
+            settled = motor_stopped and (_now_laser - dz_enter_t >= SETTLE_TIME)
+
+            if laser_armed and settled:
                 laser_fire_until = _now_laser + LASER_BURST
                 laser_armed = False
                 set_laser(True)
-            elif _now_laser < laser_fire_until:
-                set_laser(True)      # dang trong 3.5s -> giu sang
+            elif (not laser_armed) and _now_laser < laser_fire_until:
+                set_laser(True)      # dang trong burst -> giu sang
             else:
-                set_laser(False)     # het 3.5s -> tat (cho ra/vao lai)
+                set_laser(False)     # chua settle, hoac het burst -> tat
+            # Neu motor dang chay lai (chuot nhuc nhich) -> reset settle timer
+            if not motor_stopped:
+                dz_enter_t = _now_laser
         else:
             set_laser(False)         # ra khoi vung -> tat
-            laser_armed = True       # nap lai, lan sau vao se ban tiep
+            laser_armed = True       # nap lai cho phat sau
+            dz_enter_t = None
         is_firing = False
 
         # ===== Điều khiển motor =====
