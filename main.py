@@ -1128,6 +1128,11 @@ SMOOTH_ALPHA = 0.5
 # Vi tri uoc luong truc PAN (step). + = phai, - = trai. Tich phan tu toc do.
 pan_pos_steps = 0.0
 
+# ===== LASER BURST: ban bao nhieu giay moi lan chuot vao vung =====
+LASER_BURST = 3.5          # giay
+laser_armed = True         # san sang ban (True khi chuot dang o ngoai vung)
+laser_fire_until = 0.0     # thoi diem tat laser
+
 # Theo doi mode hien tai de chi gui F/S khi DOI mode, khong spam
 _current_mode = None     # "TRACK" hoac "SCAN", None luc dau
 
@@ -1244,10 +1249,23 @@ try:
         # ===== Doc trang thai limit tu Arduino (chac kep) =====
         poll_limits()
 
-        # ===== LASER DON GIAN: chuot trong deadzone -> BAN, ra ngoai -> tat =====
-        # Khong tinh goc/offset nua. Tracking van chay binh thuong.
+        # ===== LASER: chuot vao deadzone -> BAN 3.5 giay roi tat =====
+        # Phai RA khoi vung roi VAO lai moi ban phat tiep.
         target_in_deadzone = target_found and center_in_deadzone
-        set_laser(target_in_deadzone)
+        _now_laser = time.time()
+        if target_in_deadzone:
+            if laser_armed:
+                # Bat dau phat: bat laser, hen gio tat sau LASER_BURST
+                laser_fire_until = _now_laser + LASER_BURST
+                laser_armed = False
+                set_laser(True)
+            elif _now_laser < laser_fire_until:
+                set_laser(True)      # dang trong 3.5s -> giu sang
+            else:
+                set_laser(False)     # het 3.5s -> tat (cho ra/vao lai)
+        else:
+            set_laser(False)         # ra khoi vung -> tat
+            laser_armed = True       # nap lai, lan sau vao se ban tiep
         is_firing = False
 
         # ===== Điều khiển motor =====
