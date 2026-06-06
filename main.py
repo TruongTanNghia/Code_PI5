@@ -1246,6 +1246,11 @@ dz_enter_t = None          # thoi diem chuot bat dau vao vung (de tinh settle)
 # Theo doi mode hien tai de chi gui F/S khi DOI mode, khong spam
 _current_mode = None     # "TRACK" hoac "SCAN", None luc dau
 
+# Gui lai lenh "M" (bat bao cong tac) dinh ky -> neu Arduino lo reset thi
+# cong tac van duoc bao lai (khong bi "het nhan tin hieu cong tac").
+_last_m_resend = 0.0
+M_RESEND_EVERY = 2.0     # giay
+
 
 try:
     print("[INFO] Webcam + YOLO tracking ready. ESC de thoat.")
@@ -1358,6 +1363,11 @@ try:
 
         # ===== Doc trang thai limit tu Arduino (chac kep) =====
         poll_limits()
+
+        # Gui lai "M" dinh ky -> Arduino lo reset van bat lai bao cong tac.
+        if time.time() - _last_m_resend >= M_RESEND_EVERY:
+            send_raw("M\n")
+            _last_m_resend = time.time()
 
         # ===== LASER: chi ban khi DA DUNG HAN tren muc tieu =====
         # Dieu kien ban: chuot trong deadzone + motor DUNG (sps=0) + on dinh SETTLE_TIME.
