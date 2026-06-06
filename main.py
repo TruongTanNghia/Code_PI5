@@ -620,11 +620,66 @@ MODEL_THAT = "best_chuotthat.pt"  # chuot THAT (YOLO12n)
 # Neu van to/nho qua: chinh BOX_SCALE_THAT (0.5 = con 1 nua, 0.6 = con 60%...).
 BOX_SCALE_THAT = 0.5
 
+# Model chuot THAT kho nhan hon (chuot nau tren nen be tong xam) -> rieng no:
+#   CONF_THAT  thap hon  -> de phat hien hon (nhung de nham hon)
+#   IMGSZ_THAT lon hon   -> anh vao net hon -> detect chuan hon (cham hon chut)
+CONF_THAT  = 0.25   # ha xuong 0.25 cho DE PHAT HIEN. Neu nham vat khac thi tang len.
+IMGSZ_THAT = 640    # tu 320 -> 640. Neu lag thi ha xuong 512 hoac 416.
+
 print(f"[INFO] Nap mo hinh CHUOT GIA : {MODEL_GIA}")
 detector_gia = MouseDetector(model_path=MODEL_GIA, conf=DET_CONF)
-print(f"[INFO] Nap mo hinh CHUOT THAT: {MODEL_THAT}")
-detector_that = MouseDetector(model_path=MODEL_THAT, conf=DET_CONF,
-                              box_scale=BOX_SCALE_THAT)
+
+# ----- CHUOT THAT: uu tien Roboflow CLOUD, khong duoc thi dung model local -----
+# USE_ROBOFLOW_THAT = True -> chuot that goi Roboflow tung khung hinh.
+#   LUU Y: cloud co do TRE -> tracking cham hon (~2-5 FPS). Can internet.
+#   API KEY: KHONG hardcode. Dat 1 trong 2:
+#     - bien moi truong ROBOFLOW_API_KEY, hoac
+#     - file roboflow_key.txt (cung thu muc, da gitignore) chua API key.
+USE_ROBOFLOW_THAT  = False   # False = dung model LOCAL best_chuotthat.pt (realtime)
+ROBOFLOW_WORKSPACE = "ngo-van-phat"
+ROBOFLOW_WORKFLOW  = "track-objects-in-video"
+ROBOFLOW_IMG_INPUT = "image"
+ROBOFLOW_CONF      = 0.40
+
+def _load_roboflow_key():
+    k = _osm.environ.get("ROBOFLOW_API_KEY")
+    if k and k.strip():
+        return k.strip()
+    if _osm.path.exists("roboflow_key.txt"):
+        try:
+            with open("roboflow_key.txt") as _fk:
+                return _fk.read().strip()
+        except Exception:
+            pass
+    return None
+
+detector_that = None
+if USE_ROBOFLOW_THAT:
+    _rf_key = _load_roboflow_key()
+    if not _rf_key:
+        print("[WARN] Chua co API key Roboflow -> dung model local thay the.")
+        print("       Tao file roboflow_key.txt (chua API key) hoac dat bien ROBOFLOW_API_KEY.")
+    else:
+        try:
+            from roboflow_detector import RoboflowDetector
+            detector_that = RoboflowDetector(
+                api_key=_rf_key,
+                workspace=ROBOFLOW_WORKSPACE,
+                workflow_id=ROBOFLOW_WORKFLOW,
+                image_input=ROBOFLOW_IMG_INPUT,
+                conf=ROBOFLOW_CONF,
+            )
+            print("[INFO] CHUOT THAT = Roboflow CLOUD (track-objects-in-video)")
+        except Exception as _erf:
+            print(f"[WARN] Khong dung duoc Roboflow ({_erf}) -> dung model local.")
+
+if detector_that is None:
+    print(f"[INFO] CHUOT THAT = model local {MODEL_THAT}")
+    detector_that = MouseDetector(model_path=MODEL_THAT, conf=CONF_THAT,
+                                  imgsz=IMGSZ_THAT, box_scale=BOX_SCALE_THAT)
+
+# Ten hien thi cho chuot that (cloud hay local)
+MODEL_THAT_LABEL = "CHUOT THAT" if isinstance(detector_that, MouseDetector) else "CHUOT THAT (cloud)"
 
 # Mac dinh dung mo hinh CHUOT GIA. Nhan 'M' luc chay de doi.
 detector = detector_gia
@@ -1368,7 +1423,7 @@ try:
 
         prev_t = now
 
-        info = f"FPS: {fps:.1f} conf>={DET_CONF} det:{len(display_dets)}"
+        info = f"FPS: {fps:.1f} conf>={detector.conf} det:{len(display_dets)}"
         cv2.putText(frame, info, (10, 25),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
 
@@ -1480,7 +1535,7 @@ try:
         elif key == ord('m'):       # DOI MO HINH (demo: chuot GIA <-> chuot THAT)
             if detector is detector_gia:
                 detector = detector_that
-                model_name = "CHUOT THAT"
+                model_name = MODEL_THAT_LABEL
             else:
                 detector = detector_gia
                 model_name = "CHUOT GIA"

@@ -22,3 +22,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Roboflow API key (KHONG day len GitHub)
+roboflow_key.txt
