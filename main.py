@@ -809,8 +809,9 @@ SCAN_FLIP_BLACKOUT = 1.5
 
 # LUOI AN TOAN: quet 1 huong qua lau ma CHUA cham cong tac -> TU DAO CHIEU.
 # -> cong tac co hut/khong an thi camera van khong bao gio ket cung.
-# Dat lon hon thoi gian quet het 1 ben (vd ben rong thi tang len 6-8).
-SCAN_MAX_SWEEP_TIME = 5.0
+# Dat LON hon thoi gian quet het 1 ben de CONG TAC la cai dao chinh
+# (luoi chi du phong). Vung rong thi tang them; vung hep co the giam.
+SCAN_MAX_SWEEP_TIME = 8.0
 
 # ===== CHE DO QUET (TUAN TRA) =====
 # USE_COORD_SCAN = False -> QUET THEO CONG TAC HANH TRINH (yeu cau de bai):

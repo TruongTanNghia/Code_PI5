@@ -181,12 +181,16 @@ void loop() {
 
   unsigned long now = micros();
 
-  // ===== PAN: cham limit -> DUNG huong do (ca TRACK va SCAN) =====
-  // Python (Scanner) tu lo lat chieu khi scan, dua tren trang thai LIM
-  // Arduino chi viec: huong nao cham limit thi khong phat xung huong do.
+  // ===== PAN =====
+  // CHI chan khi TRACK (safety_block=true) de bao ve phan cung.
+  // Luc SCAN (safety_block=false): KHONG chan -> Python (Scanner) tu lo dao
+  // chieu khi cham cong tac. Neu chan luc scan + dau day CHEO -> motor bi ket
+  // (cong tac dau phai noi vao LIM_PAN_NEG -> chan luon huong quay trai).
   long pan_abs = labs(pan_sps);
-  bool pan_blocked = (pan_sps > 0 && limitHit(LIM_PAN_POS)) ||
-                     (pan_sps < 0 && limitHit(LIM_PAN_NEG));
+  bool pan_blocked = safety_block && (
+                       (pan_sps > 0 && limitHit(LIM_PAN_POS)) ||
+                       (pan_sps < 0 && limitHit(LIM_PAN_NEG))
+                     );
   if (pan_abs >= MIN_SPS && !pan_blocked) {
     unsigned long half_us = 1000000UL / (2UL * pan_abs);
     if (now - pan_last_us >= half_us) {
