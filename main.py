@@ -801,12 +801,13 @@ SCAN_TILT_STEP_TIME = 0.3 # giay: thoi gian nhich tilt moi khi doi chieu pan
 SCAN_START_DELAY = 2.0    # giay: doi LAU hon truoc khi quet (tu 0.5 -> 2.0)
                           # giup khong scan loan khi YOLO nhap nhay 1-2 frame
 
-# ===== TUAN TRA THEO TOA DO (quet trong khu vuc trai-phai chi dinh) =====
-# Pan dao chieu khi vi tri (so step uoc luong) ra ngoai khoang [MIN, MAX].
-# Vi tri = Python tu dem (tich phan toc do), KHONG can cong tac.
-# Dat vung tuan tra: chay main.py, bam '[' o mep TRAI, ']' o mep PHAI (luu tu dong).
-# Hoac chay calibrate_pan.py. Mac dinh +/- PAN_SCAN_RANGE quanh diem khoi dong.
-USE_COORD_SCAN = True
+# ===== CHE DO QUET (TUAN TRA) =====
+# USE_COORD_SCAN = False -> QUET THEO CONG TAC HANH TRINH (yeu cau de bai):
+#     Pan quay 1 huong, CHAM cong tac -> DAO CHIEU quay nguoc lai.
+#     (dau cheo: quay phai cham cong tac trai -> ve trai, va nguoc lai;
+#      phan Arduino da map san A2/A3 nen logic chi can dung lim_pan_pos/neg)
+# USE_COORD_SCAN = True  -> quet theo toa do [PAN_LIMIT_MIN, MAX] (khong dung cong tac).
+USE_COORD_SCAN = False
 PAN_SCAN_RANGE = 3000              # mac dinh neu chua dat vung
 PAN_LIMIT_MIN = -PAN_SCAN_RANGE    # mep TRAI vung tuan tra (step)
 PAN_LIMIT_MAX = +PAN_SCAN_RANGE    # mep PHAI vung tuan tra (step)
@@ -870,14 +871,16 @@ class Scanner:
 
         flip = False
         if USE_COORD_SCAN:
-            # ===== QUET THUAN TUY THEO TOA DO - BO QUA CONG TAC =====
-            # (cong tac chap chon -> khong dung trong scan, tranh ket cung)
+            # ===== QUET THEO TOA DO - BO QUA CONG TAC =====
             if self.pan_dir > 0 and pan_pos >= PAN_LIMIT_MAX:
                 flip = True
             elif self.pan_dir < 0 and pan_pos <= PAN_LIMIT_MIN:
                 flip = True
         else:
-            # Che do cu: dao theo cong tac
+            # ===== QUET THEO CONG TAC HANH TRINH (yeu cau de bai) =====
+            # Dang quay huong nao ma cham cong tac huong do -> DAO CHIEU.
+            #   pan_dir > 0 (quay phai) + lim_pan_pos -> dao ve trai
+            #   pan_dir < 0 (quay trai) + lim_pan_neg -> dao ve phai
             if (self.pan_dir > 0 and lim_pan_pos) or (self.pan_dir < 0 and lim_pan_neg):
                 flip = True
 
@@ -885,12 +888,13 @@ class Scanner:
             self.pan_dir = -self.pan_dir
             self.tilt_nudge_until = now + SCAN_TILT_STEP_TIME
             self.last_flip_t = now
-            self._pan_flip_lock_until = now + 0.4
+            self._pan_flip_lock_until = now + 0.4   # khoa 0.4s tranh dao lien tuc
 
-        # LUON di chuyen (khong bao gio ep 0 trong che do toa do -> khong ket)
+        # Toc do pan theo huong hien tai
         pan_sps = SCAN_PAN_SPS * self.pan_dir
         if not USE_COORD_SCAN:
-            # Chi che do cu moi chan theo cong tac
+            # Neu van con dang cham cong tac huong dang di -> dung (khong nghien vao limit).
+            # Sau khi da dao chieu o tren thi huong moi khong cham -> chay binh thuong.
             if (self.pan_dir > 0 and lim_pan_pos) or (self.pan_dir < 0 and lim_pan_neg):
                 pan_sps = 0
 
