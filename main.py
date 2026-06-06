@@ -1260,11 +1260,9 @@ try:
             x1, y1, x2, y2 = det["box"]
             conf = det["conf"]
 
-            # Diem muc tieu:
-            #   - CHUOT GIA: CANH TREN giua box (de laser ngam vao dau con chuot)
-            #   - CHUOT THAT: TAM (than) con chuot -> ngam vao than cho chuan
-            aim_top_now = AIM_AT_TOP and (detector is detector_gia)
-            if aim_top_now:
+            # Diem muc tieu = CANH TREN giua box cho CA 2 model.
+            # (laser gan LECH -> ngam vao mep tren box thi laser moi trung)
+            if AIM_AT_TOP:
                 raw_cx = (x1 + x2) // 2
                 raw_cy = y1 + AIM_TOP_MARGIN
             else:
