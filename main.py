@@ -889,10 +889,11 @@ class Scanner:
                     flip = True
             else:
                 # ===== QUET THEO CONG TAC HANH TRINH (yeu cau de bai) =====
-                # Dang quay huong nao ma cham cong tac huong do -> DAO CHIEU.
-                #   pan_dir > 0 (quay phai) + lim_pan_pos -> dao ve trai
-                #   pan_dir < 0 (quay trai) + lim_pan_neg -> dao ve phai
-                if (self.pan_dir > 0 and lim_pan_pos) or (self.pan_dir < 0 and lim_pan_neg):
+                # CHAM BAT KY cong tac pan nao (trai HOAC phai) -> DAO CHIEU.
+                # Ly do: dau day/lap co the CHEO -> huong quay khong khop ten
+                # cong tac (vd quay phai lai cham cong tac "trai"). Cu cham la dao
+                # cho chac. BLACKOUT 1.5s ben duoi lo viec chong cham lien tuc/nhieu.
+                if lim_pan_pos or lim_pan_neg:
                     flip = True
 
         if flip:
