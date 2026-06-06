@@ -608,8 +608,22 @@ if not cap.isOpened():
         f"Thu doi CAM_INDEX sang 1, 2..."
     )
 
-# ================= YOLO =================
-detector = MouseDetector(conf=DET_CONF)  # dung nguong tu override o tren
+# ================= YOLO: HAI MO HINH (bat/tat de DEMO) =================
+# Co 2 mo hinh:
+#   - CHUOT GIA : mo hinh cu (segmentation) - bat chuot gia/do choi
+#   - CHUOT THAT: mo hinh moi (YOLO12n)      - bat chuot that
+# Luc chay, nhan phim 'M' de doi qua lai giua 2 mo hinh.
+MODEL_GIA  = "best_seg.pt"        # chuot GIA (segmentation) - GIU NGUYEN TEN
+MODEL_THAT = "best_chuotthat.pt"  # chuot THAT (YOLO12n)
+
+print(f"[INFO] Nap mo hinh CHUOT GIA : {MODEL_GIA}")
+detector_gia = MouseDetector(model_path=MODEL_GIA, conf=DET_CONF)
+print(f"[INFO] Nap mo hinh CHUOT THAT: {MODEL_THAT}")
+detector_that = MouseDetector(model_path=MODEL_THAT, conf=DET_CONF)
+
+# Mac dinh dung mo hinh CHUOT GIA. Nhan 'M' luc chay de doi.
+detector = detector_gia
+model_name = "CHUOT GIA"
 
 # ================= TRACKING CONFIG =================
 # Vùng "đứng yên" - vào trong vùng này thì motor dừng hẳn -> san sang BAN.
@@ -1357,6 +1371,11 @@ try:
         cv2.putText(frame, dbg, (10, 80),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
 
+        # Ten mo hinh dang dung (demo) + huong dan doi
+        model_color = (0, 255, 0) if detector is detector_gia else (255, 0, 255)
+        cv2.putText(frame, f"MODEL: {model_name}  [M=doi mo hinh]", (10, 120),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, model_color, 2)
+
         # Trang thai: SCANNING / TRACKING
         mode_txt = "SCANNING" if scanner.active else ("TRACKING" if target_found else "WAITING")
         mode_color = (0, 165, 255) if scanner.active else ((0, 255, 0) if target_found else (200, 200, 200))
@@ -1451,6 +1470,19 @@ try:
                 print(f"[PATROL] da luu {PAN_LIMIT_MIN}..{PAN_LIMIT_MAX}")
             except Exception as _e:
                 print(f"[PATROL] luu loi: {_e}")
+        elif key == ord('m'):       # DOI MO HINH (demo: chuot GIA <-> chuot THAT)
+            if detector is detector_gia:
+                detector = detector_that
+                model_name = "CHUOT THAT"
+            else:
+                detector = detector_gia
+                model_name = "CHUOT GIA"
+            # Xoa detection cu + tam muot de khong bi keo theo mo hinh truoc
+            last_dets = []
+            miss_count = DET_PERSIST_FRAMES + 1
+            smooth_cx = None
+            smooth_cy = None
+            print(f"[MODEL] >>> Da chuyen sang mo hinh: {model_name}")
 
 finally:
     set_laser(False)
