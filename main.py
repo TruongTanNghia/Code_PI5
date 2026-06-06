@@ -807,6 +807,11 @@ SCAN_START_DELAY = 2.0    # giay: doi LAU hon truoc khi quet (tu 0.5 -> 2.0)
 # TANG len neu van bi ket (vd 2.0); GIAM neu muon dao nhanh hon (vd 1.0).
 SCAN_FLIP_BLACKOUT = 1.5
 
+# LUOI AN TOAN: quet 1 huong qua lau ma CHUA cham cong tac -> TU DAO CHIEU.
+# -> cong tac co hut/khong an thi camera van khong bao gio ket cung.
+# Dat lon hon thoi gian quet het 1 ben (vd ben rong thi tang len 6-8).
+SCAN_MAX_SWEEP_TIME = 5.0
+
 # ===== CHE DO QUET (TUAN TRA) =====
 # USE_COORD_SCAN = False -> QUET THEO CONG TAC HANH TRINH (yeu cau de bai):
 #     Pan quay 1 huong, CHAM cong tac -> DAO CHIEU quay nguoc lai.
@@ -849,11 +854,14 @@ class Scanner:
         self._prev_lim_tilt_neg = False
         # Cooldown sau khi lat -> 0.3s khong lat lai (tranh rung)
         self._pan_flip_lock_until = 0.0
+        # Thoi diem bat dau quay theo huong hien tai (de FAILSAFE theo thoi gian)
+        self._dir_start_t = None
 
     def on_target_found(self):
         """Co target lai -> tat quet."""
         self.active = False
         self.lost_since = None
+        self._dir_start_t = None   # reset timer huong quet cho lan scan sau
 
     def on_target_lost(self):
         """Mat target -> chuan bi quet sau SCAN_START_DELAY giay."""
@@ -874,6 +882,10 @@ class Scanner:
         Cong tac that van duoc dung de dao + hieu chinh khi co nhan.
         """
         self.active = True
+
+        # Bat dau dem thoi gian cho huong quet hien tai
+        if self._dir_start_t is None:
+            self._dir_start_t = now
 
         # Trong khoang BLACKOUT vua dao chieu xong -> BO QUA cong tac
         # (de camera chay han 1 doan, khong bi cong tac nhieu kich dao loan).
@@ -896,10 +908,17 @@ class Scanner:
                 if lim_pan_pos or lim_pan_neg:
                     flip = True
 
+            # ===== LUOI AN TOAN: quet 1 huong qua lau ma chua cham cong tac =====
+            # (cong tac hut/khong an) -> TU DAO CHIEU de KHONG BAO GIO ket cung.
+            if (now - self._dir_start_t) >= SCAN_MAX_SWEEP_TIME:
+                flip = True
+                print("[SCAN] failsafe: quet qua lau chua cham cong tac -> tu dao chieu")
+
         if flip:
             self.pan_dir = -self.pan_dir
             self.tilt_nudge_until = now + SCAN_TILT_STEP_TIME
             self.last_flip_t = now
+            self._dir_start_t = now   # reset timer cho huong moi
             # Bo qua cong tac trong SCAN_FLIP_BLACKOUT giay -> chay han 1 doan.
             self._pan_flip_lock_until = now + SCAN_FLIP_BLACKOUT
 
