@@ -857,12 +857,17 @@ class Scanner:
         self._pan_flip_lock_until = 0.0
         # Thoi diem bat dau quay theo huong hien tai (de FAILSAFE theo thoi gian)
         self._dir_start_t = None
+        # ARMED: san sang nhan cong tac de dao chieu.
+        # Sau khi dao -> DISARM, chi ARM lai khi cong tac da NHA (camera roi cong tac)
+        # -> chong dao loan/dao nham do tin hieu cong tac cu con dinh.
+        self._armed = True
 
     def on_target_found(self):
         """Co target lai -> tat quet."""
         self.active = False
         self.lost_since = None
         self._dir_start_t = None   # reset timer huong quet cho lan scan sau
+        self._armed = True
 
     def on_target_lost(self):
         """Mat target -> chuan bi quet sau SCAN_START_DELAY giay."""
@@ -875,12 +880,14 @@ class Scanner:
             return False
         return (time.time() - self.lost_since) >= SCAN_START_DELAY
 
-    def compute(self, now, lim_pan_neg, lim_pan_pos, lim_tilt_neg, lim_tilt_pos,
-                pan_pos=0.0):
+    def compute(self, now, pan_hit_latched, pan_pressed_now,
+                lim_tilt_neg, lim_tilt_pos, pan_pos=0.0):
         """
-        Quet pan trong VUNG TOA DO [PAN_LIMIT_MIN, PAN_LIMIT_MAX].
-        Dao chieu khi pan_pos ra ngoai vung (khong can cong tac).
-        Cong tac that van duoc dung de dao + hieu chinh khi co nhan.
+        Quet pan qua lai. Dao chieu khi:
+          - (CHE DO CONG TAC) cham BAT KY cong tac pan -> dao, roi PHAI thay
+            cong tac NHA ra moi cho dao lan ke (chong dao loan/dao nham).
+          - (CHE DO TOA DO) pan_pos ra ngoai vung [MIN, MAX].
+        Co LUOI AN TOAN theo thoi gian: di 1 huong qua lau -> tu dao.
         """
         self.active = True
 
@@ -888,43 +895,38 @@ class Scanner:
         if self._dir_start_t is None:
             self._dir_start_t = now
 
-        # Trong khoang BLACKOUT vua dao chieu xong -> BO QUA cong tac
-        # (de camera chay han 1 doan, khong bi cong tac nhieu kich dao loan).
-        in_blackout = now < self._pan_flip_lock_until
-
         flip = False
-        if not in_blackout:
-            if USE_COORD_SCAN:
-                # ===== QUET THEO TOA DO - BO QUA CONG TAC =====
-                if self.pan_dir > 0 and pan_pos >= PAN_LIMIT_MAX:
-                    flip = True
-                elif self.pan_dir < 0 and pan_pos <= PAN_LIMIT_MIN:
-                    flip = True
-            else:
-                # ===== QUET THEO CONG TAC HANH TRINH (yeu cau de bai) =====
-                # CHAM BAT KY cong tac pan nao (trai HOAC phai) -> DAO CHIEU.
-                # Ly do: dau day/lap co the CHEO -> huong quay khong khop ten
-                # cong tac (vd quay phai lai cham cong tac "trai"). Cu cham la dao
-                # cho chac. BLACKOUT 1.5s ben duoi lo viec chong cham lien tuc/nhieu.
-                if lim_pan_pos or lim_pan_neg:
-                    flip = True
-
-            # ===== LUOI AN TOAN: quet 1 huong qua lau ma chua cham cong tac =====
-            # (cong tac hut/khong an) -> TU DAO CHIEU de KHONG BAO GIO ket cung.
-            if (now - self._dir_start_t) >= SCAN_MAX_SWEEP_TIME:
+        if USE_COORD_SCAN:
+            # ===== QUET THEO TOA DO =====
+            if self.pan_dir > 0 and pan_pos >= PAN_LIMIT_MAX:
                 flip = True
-                print("[SCAN] failsafe: quet qua lau chua cham cong tac -> tu dao chieu")
+            elif self.pan_dir < 0 and pan_pos <= PAN_LIMIT_MIN:
+                flip = True
+        else:
+            # ===== QUET THEO CONG TAC HANH TRINH (yeu cau de bai) =====
+            # ARM lai khi cong tac da NHA + qua thoi gian toi thieu sau lan dao truoc.
+            # -> dam bao camera da ROI khoi cong tac vua cham moi nhan cham tiep.
+            if not self._armed:
+                if (not pan_pressed_now) and (now - self.last_flip_t >= SCAN_FLIP_BLACKOUT):
+                    self._armed = True
+            # Dang ARMED + co cham cong tac (latch) -> DAO CHIEU
+            if self._armed and pan_hit_latched:
+                flip = True
+
+        # ===== LUOI AN TOAN: di 1 huong qua lau ma chua dao -> tu dao =====
+        if (now - self._dir_start_t) >= SCAN_MAX_SWEEP_TIME:
+            flip = True
+            print("[SCAN] failsafe: quet qua lau chua dao -> tu dao chieu")
 
         if flip:
             self.pan_dir = -self.pan_dir
             self.tilt_nudge_until = now + SCAN_TILT_STEP_TIME
             self.last_flip_t = now
-            self._dir_start_t = now   # reset timer cho huong moi
-            # Bo qua cong tac trong SCAN_FLIP_BLACKOUT giay -> chay han 1 doan.
-            self._pan_flip_lock_until = now + SCAN_FLIP_BLACKOUT
+            self._dir_start_t = now      # reset timer cho huong moi
+            self._armed = False          # cho cong tac NHA ra moi armed lai
+            print(f"[SCAN] DAO CHIEU -> gio quay {'PHAI' if self.pan_dir > 0 else 'TRAI'}")
 
-        # LUON chay theo huong hien tai. Arduino tu chan khi cham limit (khong nghien),
-        # Python lo dao chieu -> KHONG ep pan_sps=0 (tranh ket cung).
+        # LUON chay theo huong hien tai (Arduino khong chan pan luc scan).
         pan_sps = SCAN_PAN_SPS * self.pan_dir
 
         # ===== TILT: dang trong cua so nhich? =====
@@ -1427,12 +1429,14 @@ try:
                 if _current_mode != "SCAN":
                     send_raw("S")
                     _current_mode = "SCAN"
-                # Dung LATCH: gom ca cu cham pan ngan (khong bo lo) vao lim pan.
-                # -> he cham cong tac la DAO CHIEU NGAY, du quet nhanh luot qua.
-                pan_hit = lim_pan_pos or lim_pan_neg or pan_lim_latch
+                # pan_hit_latched: co cu cham pan (ke ca thoang qua, nho LATCH).
+                # pan_pressed_now: cong tac pan dang nhan NGAY LUC NAY (live) ->
+                #   de biet camera da NHA cong tac chua (arm lai).
+                pan_hit_latched = lim_pan_pos or lim_pan_neg or pan_lim_latch
+                pan_pressed_now = lim_pan_pos or lim_pan_neg
                 pan_scan, tilt_scan = scanner.compute(
                     time.time(),
-                    pan_hit, pan_hit,
+                    pan_hit_latched, pan_pressed_now,
                     lim_tilt_neg, lim_tilt_pos,
                     pan_pos=pan_pos_steps,
                 )
