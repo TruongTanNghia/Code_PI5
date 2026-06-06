@@ -616,9 +616,10 @@ if not cap.isOpened():
 MODEL_GIA  = "best_seg.pt"        # chuot GIA (segmentation) - GIU NGUYEN TEN
 MODEL_THAT = "best_chuotthat.pt"  # chuot THAT (YOLO12n)
 
-# Model chuot THAT ve box qua to (gap doi vat) -> thu nho box ve con 0.5.
-# Neu van to/nho qua: chinh BOX_SCALE_THAT (0.5 = con 1 nua, 0.6 = con 60%...).
-BOX_SCALE_THAT = 0.5
+# Box model chuot THAT: co/gian QUANH TAM con chuot.
+#   So CANG LON -> box CANG TO (om het con chuot). So nho -> box nho lai.
+#   1.0 = giu nguyen box model (truoc bi to gap doi), 0.7 = vua om giua con chuot.
+BOX_SCALE_THAT = 0.7
 
 # Model chuot THAT kho nhan hon (chuot nau tren nen be tong xam) -> rieng no:
 #   CONF_THAT  thap hon  -> de phat hien hon (nhung de nham hon)
