@@ -801,6 +801,12 @@ SCAN_TILT_STEP_TIME = 0.3 # giay: thoi gian nhich tilt moi khi doi chieu pan
 SCAN_START_DELAY = 2.0    # giay: doi LAU hon truoc khi quet (tu 0.5 -> 2.0)
                           # giup khong scan loan khi YOLO nhap nhay 1-2 frame
 
+# Sau khi DAO CHIEU, BO QUA cong tac trong khoang thoi gian nay (giay).
+# -> camera chay han 1 doan moi nhan cong tac tiep -> CONG TAC NHIEU (chatter)
+#    khong lam camera ket/dao loan tai cho nua.
+# TANG len neu van bi ket (vd 2.0); GIAM neu muon dao nhanh hon (vd 1.0).
+SCAN_FLIP_BLACKOUT = 1.5
+
 # ===== CHE DO QUET (TUAN TRA) =====
 # USE_COORD_SCAN = False -> QUET THEO CONG TAC HANH TRINH (yeu cau de bai):
 #     Pan quay 1 huong, CHAM cong tac -> DAO CHIEU quay nguoc lai.
@@ -869,34 +875,36 @@ class Scanner:
         """
         self.active = True
 
-        flip = False
-        if USE_COORD_SCAN:
-            # ===== QUET THEO TOA DO - BO QUA CONG TAC =====
-            if self.pan_dir > 0 and pan_pos >= PAN_LIMIT_MAX:
-                flip = True
-            elif self.pan_dir < 0 and pan_pos <= PAN_LIMIT_MIN:
-                flip = True
-        else:
-            # ===== QUET THEO CONG TAC HANH TRINH (yeu cau de bai) =====
-            # Dang quay huong nao ma cham cong tac huong do -> DAO CHIEU.
-            #   pan_dir > 0 (quay phai) + lim_pan_pos -> dao ve trai
-            #   pan_dir < 0 (quay trai) + lim_pan_neg -> dao ve phai
-            if (self.pan_dir > 0 and lim_pan_pos) or (self.pan_dir < 0 and lim_pan_neg):
-                flip = True
+        # Trong khoang BLACKOUT vua dao chieu xong -> BO QUA cong tac
+        # (de camera chay han 1 doan, khong bi cong tac nhieu kich dao loan).
+        in_blackout = now < self._pan_flip_lock_until
 
-        if flip and now >= self._pan_flip_lock_until:
+        flip = False
+        if not in_blackout:
+            if USE_COORD_SCAN:
+                # ===== QUET THEO TOA DO - BO QUA CONG TAC =====
+                if self.pan_dir > 0 and pan_pos >= PAN_LIMIT_MAX:
+                    flip = True
+                elif self.pan_dir < 0 and pan_pos <= PAN_LIMIT_MIN:
+                    flip = True
+            else:
+                # ===== QUET THEO CONG TAC HANH TRINH (yeu cau de bai) =====
+                # Dang quay huong nao ma cham cong tac huong do -> DAO CHIEU.
+                #   pan_dir > 0 (quay phai) + lim_pan_pos -> dao ve trai
+                #   pan_dir < 0 (quay trai) + lim_pan_neg -> dao ve phai
+                if (self.pan_dir > 0 and lim_pan_pos) or (self.pan_dir < 0 and lim_pan_neg):
+                    flip = True
+
+        if flip:
             self.pan_dir = -self.pan_dir
             self.tilt_nudge_until = now + SCAN_TILT_STEP_TIME
             self.last_flip_t = now
-            self._pan_flip_lock_until = now + 0.4   # khoa 0.4s tranh dao lien tuc
+            # Bo qua cong tac trong SCAN_FLIP_BLACKOUT giay -> chay han 1 doan.
+            self._pan_flip_lock_until = now + SCAN_FLIP_BLACKOUT
 
-        # Toc do pan theo huong hien tai
+        # LUON chay theo huong hien tai. Arduino tu chan khi cham limit (khong nghien),
+        # Python lo dao chieu -> KHONG ep pan_sps=0 (tranh ket cung).
         pan_sps = SCAN_PAN_SPS * self.pan_dir
-        if not USE_COORD_SCAN:
-            # Neu van con dang cham cong tac huong dang di -> dung (khong nghien vao limit).
-            # Sau khi da dao chieu o tren thi huong moi khong cham -> chay binh thuong.
-            if (self.pan_dir > 0 and lim_pan_pos) or (self.pan_dir < 0 and lim_pan_neg):
-                pan_sps = 0
 
         # ===== TILT: dang trong cua so nhich? =====
         if now < self.tilt_nudge_until:
