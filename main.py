@@ -1045,12 +1045,17 @@ lim_tilt_neg = False
 lim_tilt_pos = False
 lim_pan_neg = False
 lim_pan_pos = False
+# LATCH (chot): he nhin thay cong tac pan CHAM (du chi thoang qua giua 2 vong loop)
+# thi GHI NHO lai -> khong bo lo cu cham ngan khi quet nhanh.
+# Scanner doc xong se xoa (= False).
+pan_lim_latch = False
 _serial_buf = ""
 
 def poll_limits():
     """Doc cac dong Arduino gui, cap nhat trang thai limit. Khong block.
     Cac dong khac (MODE:, OK ..., READY...) in ra console de debug."""
     global _serial_buf, lim_tilt_neg, lim_tilt_pos, lim_pan_neg, lim_pan_pos
+    global pan_lim_latch
     try:
         n = ser.in_waiting
     except Exception:
@@ -1075,6 +1080,9 @@ def poll_limits():
                     lim_tilt_pos = bool(a1)
                     lim_pan_neg = bool(a2)
                     lim_pan_pos = bool(a3)
+                    # CHOT cu cham pan: chi can 1 lan thay 1 -> ghi nho (khong bo lo)
+                    if a2 or a3:
+                        pan_lim_latch = True
                 except Exception:
                     pass
             else:
@@ -1418,13 +1426,16 @@ try:
                 if _current_mode != "SCAN":
                     send_raw("S")
                     _current_mode = "SCAN"
-                # Scanner quet trong vung toa do [PAN_LIMIT_MIN, MAX]
+                # Dung LATCH: gom ca cu cham pan ngan (khong bo lo) vao lim pan.
+                # -> he cham cong tac la DAO CHIEU NGAY, du quet nhanh luot qua.
+                pan_hit = lim_pan_pos or lim_pan_neg or pan_lim_latch
                 pan_scan, tilt_scan = scanner.compute(
                     time.time(),
-                    lim_pan_neg, lim_pan_pos,
+                    pan_hit, pan_hit,
                     lim_tilt_neg, lim_tilt_pos,
                     pan_pos=pan_pos_steps,
                 )
+                pan_lim_latch = False   # da tieu thu chot -> xoa
                 axis_x.send_sps(pan_scan, send_raw)
                 axis_y.send_sps(tilt_scan, send_raw)
             else:
