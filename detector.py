@@ -30,7 +30,8 @@ class MouseDetector:
     Tương thích ngược với main.py cũ (vẫn có box/center/conf).
     """
 
-    def __init__(self, model_path="best_seg.pt", conf=DET_CONF, imgsz=320):
+    def __init__(self, model_path="best_seg.pt", conf=DET_CONF, imgsz=320,
+                 box_scale=1.0):
         # model_path:
         #   - "best_seg.pt"          -> PyTorch goc (dung duoc ngay, may Windows OK)
         #   - "best_seg_ncnn_model"  -> NCNN (nhanh hon tren Pi, phai export truoc:
@@ -38,9 +39,12 @@ class MouseDetector:
         #   - "best_seg.onnx"        -> ONNX (nhanh vua)
         # imgsz: kich thuoc input. 320 nhanh, 416/512/640 chinh xac hon nhung cham hon.
         #   May Windows manh thi co the de 640 cho detect tot.
+        # box_scale: thu nho/phong to box quanh TAM. 1.0 = giu nguyen,
+        #   0.5 = box nho lai con 1 nua (dung khi model ve box qua to so voi vat).
         self.model = YOLO(model_path)
         self.conf = conf
         self.imgsz = imgsz
+        self.box_scale = box_scale
 
     def detect(self, frame):
         # verbose=False để khỏi spam log mỗi frame
@@ -68,6 +72,17 @@ class MouseDetector:
             x1, y1, x2, y2 = boxes[i]
             x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
             conf = float(confs[i])
+
+            # Thu nho box quanh TAM neu box_scale != 1.0 (model ve box qua to)
+            if self.box_scale != 1.0:
+                bcx = (x1 + x2) / 2.0
+                bcy = (y1 + y2) / 2.0
+                bw = (x2 - x1) * self.box_scale
+                bh = (y2 - y1) * self.box_scale
+                x1 = int(bcx - bw / 2.0)
+                x2 = int(bcx + bw / 2.0)
+                y1 = int(bcy - bh / 2.0)
+                y2 = int(bcy + bh / 2.0)
 
             mask_bool = None
             cx, cy = (x1 + x2) // 2, (y1 + y2) // 2  # fallback: tâm box

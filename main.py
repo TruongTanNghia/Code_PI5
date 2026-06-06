@@ -616,10 +616,15 @@ if not cap.isOpened():
 MODEL_GIA  = "best_seg.pt"        # chuot GIA (segmentation) - GIU NGUYEN TEN
 MODEL_THAT = "best_chuotthat.pt"  # chuot THAT (YOLO12n)
 
+# Model chuot THAT ve box qua to (gap doi vat) -> thu nho box ve con 0.5.
+# Neu van to/nho qua: chinh BOX_SCALE_THAT (0.5 = con 1 nua, 0.6 = con 60%...).
+BOX_SCALE_THAT = 0.5
+
 print(f"[INFO] Nap mo hinh CHUOT GIA : {MODEL_GIA}")
 detector_gia = MouseDetector(model_path=MODEL_GIA, conf=DET_CONF)
 print(f"[INFO] Nap mo hinh CHUOT THAT: {MODEL_THAT}")
-detector_that = MouseDetector(model_path=MODEL_THAT, conf=DET_CONF)
+detector_that = MouseDetector(model_path=MODEL_THAT, conf=DET_CONF,
+                              box_scale=BOX_SCALE_THAT)
 
 # Mac dinh dung mo hinh CHUOT GIA. Nhan 'M' luc chay de doi.
 detector = detector_gia
