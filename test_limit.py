@@ -12,11 +12,13 @@ CACH DUNG:
      Neu BAM ma KHONG co gi nhay                    => HU PHAN CUNG (day long/cong tac).
   -> Ctrl+C de thoat.
 
-Y nghia LIM:a0,a1,a2,a3
-  a0 = cong tac TREN (tilt len)
-  a1 = cong tac DUOI (tilt xuong)
-  a2 = cong tac (pan) - ngat-tr
-  a3 = cong tac (pan) - ngat-ph
+4 cong tac (theo thu tu Arduino gui a0,a1,a2,a3):
+  TREN  (tilt len)
+  DUOI  (tilt xuong)
+  TRAI  (pan)
+  PHAI  (pan)
+Khi bam, chuong trinh in ro vd:
+  TREN =nha   DUOI =nha   TRAI =NHAN  PHAI =nha    <<< VUA BAM: TRAI
 """
 import sys
 import time
@@ -63,9 +65,12 @@ def main():
     print("[INFO] Thay 'LIM:...' doi so khi bam = OK. Khong co gi = hu day/cong tac.")
     print("[INFO] Ctrl+C de thoat.\n")
 
+    # Ten 4 cong tac theo thu tu a0,a1,a2,a3 Arduino gui
+    TEN = ["TREN ", "DUOI ", "TRAI ", "PHAI "]
+
     buf = ""
     last_m = time.time()
-    last_lim = None
+    prev = [None, None, None, None]   # trang thai lan truoc cua 4 cong tac
     try:
         while True:
             n = ser.in_waiting
@@ -77,9 +82,23 @@ def main():
                     if not line:
                         continue
                     if line.startswith("LIM:"):
-                        if line != last_lim:        # chi in khi DOI -> de thay ro
-                            print(f"  >>> {line}   <-- CONG TAC DOI TRANG THAI")
-                            last_lim = line
+                        try:
+                            vals = [int(x) for x in line[4:].split(",")[:4]]
+                        except Exception:
+                            continue
+                        # Dong trang thai: TREN=nha DUOI=NHAN TRAI=nha PHAI=nha
+                        trangthai = "  ".join(
+                            f"{TEN[i]}={'NHAN' if vals[i] else 'nha '}"
+                            for i in range(4)
+                        )
+                        # Bao ro cong tac nao VUA DUOC BAM (0 -> 1)
+                        moi_bam = [TEN[i].strip() for i in range(4)
+                                   if prev[i] == 0 and vals[i] == 1]
+                        if moi_bam:
+                            print(f"  {trangthai}   <<< VUA BAM: {', '.join(moi_bam)}")
+                        elif any(p != v for p, v in zip(prev, vals)):
+                            print(f"  {trangthai}")
+                        prev = vals
                     else:
                         print(f"  [ARD] {line}")
             # Gui lai M moi 2s (phong Arduino reset)
