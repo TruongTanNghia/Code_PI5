@@ -807,11 +807,16 @@ SCAN_START_DELAY = 2.0    # giay: doi LAU hon truoc khi quet (tu 0.5 -> 2.0)
 # TANG len neu van bi ket (vd 2.0); GIAM neu muon dao nhanh hon (vd 1.0).
 SCAN_FLIP_BLACKOUT = 1.5
 
+# Cong tac phai NHAN GIU lien tuc bao lau (giay) moi tinh la "cham THAT".
+# -> loc cham gia do RUNG MOTOR (cong tac nhay rat ngay). Tang neu van dao non
+# (vd 0.12); giam neu cham that ma phan ung cham (vd 0.05).
+PAN_HIT_CONFIRM_TIME = 0.08
+
 # LUOI AN TOAN: quet 1 huong qua lau ma CHUA cham cong tac -> TU DAO CHIEU.
 # -> cong tac co hut/khong an thi camera van khong bao gio ket cung.
-# Dat LON hon thoi gian quet het 1 ben de CONG TAC la cai dao chinh
-# (luoi chi du phong). Vung rong thi tang them; vung hep co the giam.
-SCAN_MAX_SWEEP_TIME = 8.0
+# Dat LON hon NHIEU so thoi gian quet het 1 ben de CONG TAC la cai dao chinh
+# (luoi chi du phong khi cong tac hong). Quet ngan -> co the giam.
+SCAN_MAX_SWEEP_TIME = 20.0
 
 # ===== CHE DO QUET (TUAN TRA) =====
 # USE_COORD_SCAN = False -> QUET THEO CONG TAC HANH TRINH (yeu cau de bai):
@@ -857,16 +862,19 @@ class Scanner:
         self._pan_flip_lock_until = 0.0
         # Thoi diem bat dau quay theo huong hien tai (de FAILSAFE theo thoi gian)
         self._dir_start_t = None
-        # ARMED: san sang nhan cong tac de dao chieu.
-        # Sau khi dao -> DISARM, chi ARM lai khi cong tac da NHA (camera roi cong tac)
-        # -> chong dao loan/dao nham do tin hieu cong tac cu con dinh.
-        self._armed = True
+        # Da NHA cong tac sau lan dao truoc chua (phai roi cong tac cu moi dao tiep
+        # -> quet HET sang ben kia, khong dao non).
+        self._released_since_flip = True
+        # Thoi diem cong tac bat dau duoc nhan lien tuc (de loc cham gia do rung).
+        self._pan_press_since = None
 
     def on_target_found(self):
         """Co target lai -> tat quet."""
         self.active = False
         self.lost_since = None
         self._dir_start_t = None   # reset timer huong quet cho lan scan sau
+        self._released_since_flip = True
+        self._pan_press_since = None
         self._armed = True
 
     def on_target_lost(self):
@@ -904,13 +912,22 @@ class Scanner:
                 flip = True
         else:
             # ===== QUET THEO CONG TAC HANH TRINH (yeu cau de bai) =====
-            # ARM lai khi cong tac da NHA + qua thoi gian toi thieu sau lan dao truoc.
-            # -> dam bao camera da ROI khoi cong tac vua cham moi nhan cham tiep.
-            if not self._armed:
-                if (not pan_pressed_now) and (now - self.last_flip_t >= SCAN_FLIP_BLACKOUT):
-                    self._armed = True
-            # Dang ARMED + co cham cong tac (latch) -> DAO CHIEU
-            if self._armed and pan_hit_latched:
+            # Theo doi cong tac NHAN LIEN TUC bao lau (loc cham gia do rung motor).
+            if not pan_pressed_now:
+                self._released_since_flip = True   # da nha cong tac cu -> cho dao tiep
+                self._pan_press_since = None
+            elif self._pan_press_since is None:
+                self._pan_press_since = now        # bat dau tinh gio nhan giu
+
+            # DAO CHIEU khi DONG THOI:
+            #   - da NHA cong tac cu (quet het sang ben kia roi moi den cong tac moi)
+            #   - cong tac dang NHAN GIU lien tuc >= PAN_HIT_CONFIRM_TIME (cham THAT,
+            #     khong phai rung giat thoang qua)
+            #   - qua blackout toi thieu sau lan dao truoc
+            if (self._released_since_flip and pan_pressed_now
+                    and self._pan_press_since is not None
+                    and (now - self._pan_press_since) >= PAN_HIT_CONFIRM_TIME
+                    and (now - self.last_flip_t) >= SCAN_FLIP_BLACKOUT):
                 flip = True
 
         # ===== LUOI AN TOAN: di 1 huong qua lau ma chua dao -> tu dao =====
@@ -922,8 +939,9 @@ class Scanner:
             self.pan_dir = -self.pan_dir
             self.tilt_nudge_until = now + SCAN_TILT_STEP_TIME
             self.last_flip_t = now
-            self._dir_start_t = now      # reset timer cho huong moi
-            self._armed = False          # cho cong tac NHA ra moi armed lai
+            self._dir_start_t = now            # reset timer cho huong moi
+            self._released_since_flip = False   # phai nha cong tac moi moi cho dao tiep
+            self._pan_press_since = None
             print(f"[SCAN] DAO CHIEU -> gio quay {'PHAI' if self.pan_dir > 0 else 'TRAI'}")
 
         # LUON chay theo huong hien tai (Arduino khong chan pan luc scan).
