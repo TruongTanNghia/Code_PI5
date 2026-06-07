@@ -23,7 +23,7 @@ RET = "#9E9E9E"       # mui ten quay lai vong lap
 
 fig, ax = plt.subplots(figsize=(11, 15))
 ax.set_xlim(0, 100)
-ax.set_ylim(88, 200)
+ax.set_ylim(34, 200)
 ax.axis("off")
 
 
@@ -114,6 +114,29 @@ for i, (c, t) in enumerate(leg):
     ax.add_patch(FancyBboxPatch((6, yy - 1), 3, 2,
                  boxstyle="round,pad=0.1", fc=c, ec="black", lw=1, zorder=5))
     ax.text(10, yy, t, ha="left", va="center", fontsize=9, color="#263238", zorder=5)
+
+# ===== KHOI CHI TIET: TUAN TRA DUNG CONG TAC HANH TRINH =====
+ax.plot([3, 97], [82, 82], color="#BDBDBD", lw=1.2, ls="--")
+ax.text(50, 77, "CHI TIẾT CHẾ ĐỘ TUẦN TRA (dùng CÔNG TẮC HÀNH TRÌNH)",
+        ha="center", fontsize=12.5, weight="bold", color="#E65100")
+
+# 3 khoi: Quay 1 huong -> Cham cong tac? -> CO: dao chieu
+box(16, 62, 22, 9, "Quay 1 hướng\n(trái / phải)", C_SCAN, 9.5, tc="#212121")
+box(50, 62, 28, 13, "Chạm CÔNG TẮC\nHÀNH TRÌNH?", C_DEC, 10, shape="diamond")
+box(85, 62, 24, 10, "ĐẢO CHIỀU\nquay ngược\nlại", C_SCAN, 9.5, tc="#212121")
+
+arrow(27.5, 62, 35.5, 62)                       # Quay -> Cham?
+arrow(64, 62, 72.5, 62); label(68, 66, "CÓ", C_FIRE)   # Cham? -> Dao chieu
+
+# KHONG: chua cham -> quay tiep (vong xuong duoi ve lai "Quay 1 huong")
+ax.plot([50, 50, 16, 16], [55.5, 50, 50, 57.5], color="#888", lw=1.8, zorder=1)
+arrow(16, 51, 16, 57.5, "#888")
+label(33, 50, "KHÔNG: quay tiếp", "#888")
+
+# Dao chieu xong -> quet tiep huong nguoc (vong ve "Quay 1 huong")
+ax.plot([85, 85, 16, 16], [67, 72, 72, 66.5], color=C_SCAN, lw=1.8, zorder=1)
+arrow(16, 68, 16, 66.5, C_SCAN)
+label(50, 72, "đảo xong → quét tiếp hướng ngược lại", C_SCAN)
 
 plt.tight_layout()
 out = "SODO_THUAT_TOAN.png"
