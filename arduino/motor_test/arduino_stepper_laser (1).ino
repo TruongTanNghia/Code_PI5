@@ -126,7 +126,7 @@ void setup() {
   digitalWrite(TILT_STEP, LOW);
   digitalWrite(LASER, LOW);
 
-  Serial.println("ARDUINO READY - stepper v3 (PAN doi dien)");
+  Serial.println("ARDUINO READY v4 - SCAN khong chan pan (dao chieu OK)");
 }
 
 void loop() {
