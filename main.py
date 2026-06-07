@@ -700,7 +700,8 @@ DEADZONE_Y = 15   # da co EMA lam muot nen giam deadzone van it lac
 #   - Neu camera quay sang PHAI (dung) -> giu nguyen.
 #   - Neu camera quay sang TRAI (sai)  -> doi INVERT_PAN.
 # Tuong tu cho tilt: dua chuot XUONG duoi, camera phai cui XUONG.
-INVERT_PAN  = False   # da test: chuot ben PHAI -> phai pan PHAI -> INVERT_PAN=False
+INVERT_PAN  = True    # DAO chieu pan cho tracking (cam quay nguoc -> lat lai).
+                      # Chi anh huong TRACKING, KHONG dung toi SCANNING.
 INVERT_TILT = False   # neu tilt nguoc (chuot duoi ma cam nguoc len) -> doi True
 
 # ===== DIEM NGAM LASER (AIM POINT) - offset pixel so voi TAM frame =====
