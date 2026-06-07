@@ -70,7 +70,7 @@ box(38, 120, 32, 11, "Động cơ đã dừng\nhẳn ≥ 0.4 giây?", C_DEC, 10,
 box(38, 107, 44, 7, "BẮN LASER 3.5 giây", C_FIRE, 12)
 
 # ===== NHANH BEN PHAI (x = 74) =====
-box(74, 159, 33, 10, "QUÉT TUẦN TRA\nxoay trái ↔ phải\ntìm con chuột", C_SCAN, 10, tc="#212121")
+box(74, 159, 34, 11, "QUÉT TUẦN TRA\nxoay trái ↔ phải tìm chuột\nchạm CÔNG TẮC HÀNH TRÌNH\n→ đảo chiều", C_SCAN, 9, tc="#212121")
 box(74, 134, 33, 9, "XOAY ĐỘNG CƠ\npan/tilt bám\ntheo con chuột", C_TRACK, 10)
 box(74, 120, 30, 7, "Chờ động cơ\ndừng ổn định", C_WAIT, 10)
 
