@@ -796,8 +796,9 @@ SEND_THROTTLE = 0.02   # giay: toi thieu giua 2 lan gui cua 1 truc
 # ===== CHE DO QUET (khi khong thay muc tieu) =====
 # Quet hinh chu S: pan qua lai trai-phai, moi lan doi chieu thi tilt nhich 1 buoc.
 # Khi phat hien chuot lai -> tu dong dung quet, chuyen sang bam.
-SCAN_PAN_SPS    = 400     # toc do pan luc quet (giam nua: 800 -> 400, detect ky hon)
-SCAN_TILT_SPS   = 300     # toc do tilt luc nhich len/xuong (giam nua: 600 -> 300)
+SCAN_PAN_SPS    = 250     # TOC DO TUAN TRA (ngang). SO CANG NHO = QUET CANG CHAM.
+                          # 400->250 cho cham hon. Muon cham nua: 150-200.
+SCAN_TILT_SPS   = 200     # toc do tilt luc nhich len/xuong (cham theo cho dong bo)
 SCAN_TILT_STEP_TIME = 0.3 # giay: thoi gian nhich tilt moi khi doi chieu pan
 SCAN_START_DELAY = 2.0    # giay: doi LAU hon truoc khi quet (tu 0.5 -> 2.0)
                           # giup khong scan loan khi YOLO nhap nhay 1-2 frame
